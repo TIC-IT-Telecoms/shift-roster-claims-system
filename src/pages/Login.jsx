@@ -34,10 +34,30 @@ function Login() {
           <a href="#">Forgot Password?</a>
         </div>
 
+        <div className="form-group">
+  <label>Login As</label>
+  <select id="role">
+    <option value="employee">Employee</option>
+    <option value="admin">Admin</option>
+  </select>
+</div>
+
         {/* 👉 UPDATE BUTTON */}
-        <button onClick={() => navigate("/dashboard")}>
-          Sign In
-        </button>
+        <button
+  onClick={() => {
+    const role = document.getElementById("role").value;
+
+    localStorage.setItem("role", role);
+
+    if (role === "admin") {
+      navigate("/admin-dashboard");
+    } else {
+      navigate("/dashboard");
+    }
+  }}
+>
+  Sign In
+</button>
       </div>
     </div>
   );
