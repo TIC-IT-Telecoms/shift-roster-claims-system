@@ -1,7 +1,7 @@
 import app from './src/app.js';
 import dotenv from 'dotenv';
-import { connectDB, sequelize } from './src/config/database.js';
 import './src/models/index.js';
+import { connectDB, sequelize } from './src/config/database.js';
 import { defineAssociations } from './src/models/associations.js';
 
 dotenv.config();
@@ -28,17 +28,20 @@ const start = async () => {
 
   } catch (error) {
     console.error('Failed to start server:', error);
+    logger.error(`Failed to start server: ${error.message}`);
     process.exit(1);
   }
 };
 
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err);
+  logger.error(`Unhandled Rejection: ${err.message}`);
   process.exit(1);
 });
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
+  logger.error(`Uncaught Exception: ${err.message}`);
   process.exit(1);
 });
 
