@@ -1,10 +1,6 @@
 import { ErrorResponse } from './utils/ErrorResponse.js';
 import { logger } from './utils/logger.js';
 
-/**
- * Restrict access based on user roles
- * Usage: authorizeRoles('Admin', 'Manager')
- */
 export const authorizeRoles = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {

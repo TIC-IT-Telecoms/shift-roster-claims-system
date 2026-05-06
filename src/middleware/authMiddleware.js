@@ -1,14 +1,10 @@
 import jwt from 'jsonwebtoken';
-import { logger } from './utils/logger.js';
-import { ErrorResponse } from './utils/ErrorResponse.js';
+import { logger } from '../utils/logger.js';
+import { ErrorResponse } from '../utils/ErrorResponse.js';
 
-/**
- * Protect routes - verifies JWT token
- */
 export const protect = (req, res, next) => {
   let token;
 
-  // 1. Get token from Authorization header
   if (
     req.headers.authorization &&
     req.headers.authorization.startsWith('Bearer')
@@ -16,19 +12,15 @@ export const protect = (req, res, next) => {
     token = req.headers.authorization.split(' ')[1];
   }
 
-  // 2. No token found
   if (!token) {
     logger.warn('Access denied: No token provided');
     return next(new ErrorResponse('Not authorized, no token provided', 401));
   }
 
   try {
-    // 3. Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // 4. Attach user to request
     req.user = decoded;
-
     logger.info(`Authenticated user ID: ${decoded.id}`);
 
     next();
@@ -38,4 +30,26 @@ export const protect = (req, res, next) => {
       new ErrorResponse('Not authorized, token is invalid or expired', 401)
     );
   }
+};
+
+export const authorizeRoles = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      logger.warn('Role check failed: no user in request');
+      return next(new ErrorResponse('Not authenticated', 401));
+    }
+
+    if (!roles.includes(req.user.role)) {
+      logger.warn(
+        `Access denied for role: ${req.user.role} (required: ${roles})`
+      );
+
+      return next(
+        new ErrorResponse('Access denied: insufficient permissions', 403)
+      );
+    }
+
+    logger.info(`Role authorized: ${req.user.role}`);
+    next();
+  };
 };

@@ -2,8 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import { errorHandler } from './middleware/errorHandler.js';
 import './models/index.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import authRoutes from './routes/authRoutes.js';
+import userRoutes from './routes/userRoutes.js';
 
 const app = express();
 
@@ -21,12 +23,13 @@ app.get('/health', (_req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
-
 app.get('/', (_req, res) => {
   res.send('Shift Roster API is running');
 });
+app.use('/api/auth', authRoutes);
+app.use('/api', userRoutes);
 
-// 404 Page Not Found
+// 404 Route Not Found
 app.use((req, res) => {
   res.status(404).json({
     success: false,

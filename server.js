@@ -1,6 +1,7 @@
 import app from './src/app.js';
 import dotenv from 'dotenv';
 import './src/models/index.js';
+import { logger } from './src/utils/logger.js';
 import { connectDB, sequelize } from './src/config/database.js';
 import { defineAssociations } from './src/models/associations.js';
 
