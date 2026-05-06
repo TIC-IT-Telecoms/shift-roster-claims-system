@@ -1,6 +1,8 @@
 import app from './src/app.js';
 import dotenv from 'dotenv';
 import { connectDB, sequelize } from './src/config/database.js';
+import './src/models/index.js';
+import { defineAssociations } from './src/models/associations.js';
 
 dotenv.config();
 
@@ -12,7 +14,9 @@ const start = async () => {
     await connectDB();
     console.log('Database connected successfully');
 
-    // Sync DB only in development
+    defineAssociations();
+
+    // Sync DB
     if (process.env.NODE_ENV === 'dev') {
       await sequelize.sync({ alter: true });
       console.log('Database synced (development mode)');
