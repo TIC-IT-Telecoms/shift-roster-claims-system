@@ -7,6 +7,7 @@ import './models/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import employeeRoutes from './routes/employeeRoutes.js';
 
 const app = express();
 
@@ -19,17 +20,10 @@ app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
-app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-  });
-});
-app.get('/', (_req, res) => {
-  res.send('Shift Roster API is running');
-});
+app.get('/', (_req, res) => { res.send('Shift Roster API is running'); });
 app.use('/api/auth', authRoutes);
 app.use('/api', userRoutes);
+app.use('/api/employees', employeeRoutes);
 
 // 404 Route Not Found
 app.use((req, res) => {
