@@ -5,27 +5,25 @@ import { ErrorResponse } from '../utils/ErrorResponse.js';
 export const protect = (req, res, next) => {
   let token;
 
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith('Bearer')
-  ) {
-    token = req.headers.authorization.split(' ')[1];
+  if (req.cookies && req.cookies.token) {
+    token = req.cookies.token;
   }
 
   if (!token) {
-    logger.warn('Access denied: No token provided');
+    logger.warn('Access denied: No token provided in cookies');
     return next(new ErrorResponse('Not authorized, no token provided', 401));
   }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
     req.user = decoded;
+
     logger.info(`Authenticated user ID: ${decoded.id}`);
 
     next();
   } catch (error) {
     logger.error(`JWT verification failed: ${error.message}`);
+
     return next(
       new ErrorResponse('Not authorized, token is invalid or expired', 401)
     );

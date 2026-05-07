@@ -25,9 +25,22 @@ export const login = asyncHandler(async (req, res, next) => {
     role: user.role,
   });
 
+  res.cookie('token', token, {
+    httpOnly: true,       
+    secure: false,       
+    sameSite: 'lax',       
+    maxAge: 24 * 60 * 60 * 1000 
+  });
+
   return successResponse(res, { token, role: user.role }, 'Login successful');
 });
 
 export const logout = asyncHandler(async (req, res) => {
-  return successResponse(res, null, 'Logout successful. Please remove token on client side.');
+  res.clearCookie('token', {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: false
+  });
+
+  return successResponse(res, null, 'Logged out successfully');
 });
