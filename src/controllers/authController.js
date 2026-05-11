@@ -57,45 +57,6 @@ export const logout = asyncHandler(async (req, res) => {
   return successResponse(res, null, 'Logged out successfully');
 });
 
-// @desc    Reset password (authenticated user resets their own)
-// @route   PUT /api/auth/reset-password
-// @access  Private
-export const resetPassword = asyncHandler(async (req, res, next) => {
-  const { old_password, new_password, confirm_password } = req.body;
-
-  if (!old_password || !new_password || !confirm_password) {
-    return next(new ErrorResponse('All fields are required', 400));
-  }
-
-  if (new_password === old_password) {
-    return next(new ErrorResponse('New password must differ from old password', 400));
-  }
-
-  if (new_password !== confirm_password) {
-    return next(new ErrorResponse('Passwords do not match', 400));
-  }
-
-  const user = await User.findByPk(req.user.id);
-
-  if (!user) {
-    return next(new ErrorResponse('User not found', 404));
-  }
-
-  const isMatch = await bcrypt.compare(old_password, user.password_hash);
-
-  if (!isMatch) {
-    logger.warn(`Reset password failed: incorrect old password for user ID ${user.user_id}`);
-    return next(new ErrorResponse('Old password is incorrect', 401));
-  }
-
-  const salt = await bcrypt.genSalt(10);
-  user.password_hash = await bcrypt.hash(new_password, salt);
-  await user.save();
-
-  logger.info(`Password reset successful: user ID ${user.user_id}`);
-
-  return successResponse(res, null, 'Password updated successfully');
-});
 
 // @desc    Verify employee by email before password reset
 // @route   POST /api/auth/forgot-password

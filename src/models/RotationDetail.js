@@ -17,7 +17,7 @@ export const RotationDetail = sequelize.define(
     day_number: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      comment: 'Day position within the cycle (1 to cycle_length)',
+      comment: 'Day position within the cycle (1..cycle_length)',
     },
     team_id: {
       type: DataTypes.INTEGER,
@@ -33,5 +33,12 @@ export const RotationDetail = sequelize.define(
   {
     tableName: 'rotation_details',
     timestamps: false,
+    indexes: [
+      {
+        unique: true,
+        fields: ['rotation_id', 'day_number', 'team_id'],
+        name: 'uq_rotation_day_team',
+      },
+    ],
   }
 );

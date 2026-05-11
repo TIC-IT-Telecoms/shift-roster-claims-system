@@ -12,11 +12,17 @@ export const RotationCycle = sequelize.define(
     cycle_name: {
       type: DataTypes.STRING(100),
       allowNull: false,
+      unique: true,
     },
     cycle_length: {
       type: DataTypes.INTEGER,
       allowNull: false,
       comment: 'Number of days in the rotation cycle',
+    },
+    start_date: {
+      type: DataTypes.DATEONLY,
+      allowNull: false,
+      comment: 'Date from which cycle day resolution begins — drives auto-loop',
     },
     description: {
       type: DataTypes.TEXT,

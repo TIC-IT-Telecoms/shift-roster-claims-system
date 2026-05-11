@@ -13,17 +13,17 @@ const router = express.Router();
 router.use(protect);
 
 // @route   GET /api/profile/me
-router.get('/me', getProfile);
+router.get('', getProfile);
 
 // @route   PATCH /api/profile/me/phone
-router.patch('/me/phone', updatePhone);
+router.patch('/phone', updatePhone);
 
 // @route   PATCH /api/profile/me/picture
 // TODO:    Add multer middleware here when storage is decided
 // e.g.    router.patch('/me/picture', upload.single('profile_picture'), updateProfilePicture);
-router.patch('/me/picture', updateProfilePicture);
+router.patch('/picture', updateProfilePicture);
 
 // @route   PUT /api/profile/me/password
-router.put('/me/password', changePassword);
+router.put('/password', changePassword);
 
 export default router;
