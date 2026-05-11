@@ -18,7 +18,7 @@ const start = async () => {
     defineAssociations();
 
     // Sync DB
-    if (process.env.NODE_ENV === 'dev') {
+    if (process.env.NODE_ENV === 'development') {
       await sequelize.sync({ alter: true });
       console.log('Database synced (development mode)');
     }

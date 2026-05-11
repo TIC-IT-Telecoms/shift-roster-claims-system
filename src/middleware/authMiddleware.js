@@ -11,7 +11,7 @@ export const protect = (req, res, next) => {
 
   if (!token) {
     logger.warn('Access denied: No token provided in cookies');
-    return next(new ErrorResponse('Not authorized, no token provided', 401));
+    return next(new ErrorResponse('Please log in to continue', 401));
   }
 
   try {
@@ -24,9 +24,7 @@ export const protect = (req, res, next) => {
   } catch (error) {
     logger.error(`JWT verification failed: ${error.message}`);
 
-    return next(
-      new ErrorResponse('Not authorized, token is invalid or expired', 401)
-    );
+    return next(new ErrorResponse('Not authorized, token is invalid or expired', 401));
   }
 };
 
@@ -38,13 +36,9 @@ export const authorizeRoles = (...roles) => {
     }
 
     if (!roles.includes(req.user.role)) {
-      logger.warn(
-        `Access denied for role: ${req.user.role} (required: ${roles})`
-      );
+      logger.warn(`Access denied for role: ${req.user.role} (required: ${roles})`);
 
-      return next(
-        new ErrorResponse('Access denied: insufficient permissions', 403)
-      );
+      return next(new ErrorResponse('Access denied: insufficient permissions', 403));
     }
 
     logger.info(`Role authorized: ${req.user.role}`);
