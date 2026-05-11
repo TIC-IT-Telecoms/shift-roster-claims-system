@@ -7,7 +7,7 @@ import { protect, authorizeRoles } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-router.use(protect, authorizeRoles('admin'));
+router.use(protect, authorizeRoles('Admin'));
 
 // @route   POST /api/employees
 router.post('/', createEmployee);
