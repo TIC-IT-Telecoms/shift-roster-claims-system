@@ -1,3 +1,4 @@
+// models/PublicHoliday.js
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/database.js';
 
@@ -12,6 +13,7 @@ export const PublicHoliday = sequelize.define(
     holiday_date: {
       type: DataTypes.DATEONLY,
       allowNull: false,
+      unique: true,
     },
     holiday_name: {
       type: DataTypes.STRING(150),
