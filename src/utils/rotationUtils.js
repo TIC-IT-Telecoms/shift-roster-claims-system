@@ -59,8 +59,12 @@ export const validateDetails = async (details, cycleLength, transaction) => {
     throw new ErrorResponse('details array is required', 400);
   }
 
-  // Check for duplicate team on same day within the submission itself
-  const seen = new Set();
+  // Track both:
+  // 1. day-team uniqueness    → one team appears once per day
+  // 2. day-shift uniqueness   → one team per shift per day
+  const seenTeam = new Set();   // key: `${day_number}-${team_id}`
+  const seenShift = new Set();  // key: `${day_number}-${shift_id}`
+
   for (const { day_number, team_id, shift_id } of details) {
     if (!day_number || !team_id || !shift_id) {
       throw new ErrorResponse(
@@ -69,25 +73,39 @@ export const validateDetails = async (details, cycleLength, transaction) => {
       );
     }
 
-    if (!Number.isInteger(day_number) || day_number < 1 || day_number > cycleLength) {
+    if (!Number.isInteger(Number(day_number)) || day_number < 1 || day_number > cycleLength) {
       throw new ErrorResponse(
         `day_number ${day_number} is out of range — must be between 1 and ${cycleLength}`,
         400
       );
     }
 
-    const key = `${day_number}-${team_id}`;
-    if (seen.has(key)) {
+    // Rule 1: Same team cannot appear twice on the same day
+    const teamKey = `${day_number}-${team_id}`;
+    if (seenTeam.has(teamKey)) {
       throw new ErrorResponse(
         `Duplicate entry: Team ID ${team_id} assigned more than once on day ${day_number}`,
         400
       );
     }
-    seen.add(key);
+    seenTeam.add(teamKey);
 
+    // Rule 2: Only one team allowed per shift per day
+    const shiftKey = `${day_number}-${shift_id}`;
+    if (seenShift.has(shiftKey)) {
+      throw new ErrorResponse(
+        `Shift ID ${shift_id} already assigned to another team on day ${day_number}. ` +
+        `Only one team is allowed per shift per day.`,
+        400
+      );
+    }
+    seenShift.add(shiftKey);
+
+    // Validate team exists
     const team = await Team.findByPk(team_id, { transaction });
     if (!team) throw new ErrorResponse(`Team not found: ID ${team_id}`, 404);
 
+    // Validate shift exists
     const shift = await Shift.findByPk(shift_id, { transaction });
     if (!shift) throw new ErrorResponse(`Shift not found: ID ${shift_id}`, 404);
   }

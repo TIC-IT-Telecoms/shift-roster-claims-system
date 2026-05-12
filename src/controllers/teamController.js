@@ -4,6 +4,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { ErrorResponse } from '../utils/ErrorResponse.js';
 import { successResponse } from '../utils/apiResponse.js';
 import { logger } from '../utils/logger.js';
+import { json } from 'sequelize';
 
 // @desc    Create team
 // @route   POST /api/teams

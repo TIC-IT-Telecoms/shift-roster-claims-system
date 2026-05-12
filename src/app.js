@@ -11,6 +11,7 @@ import employeesRoutes from './routes/employeesRoutes.js';
 import teamRoutes from './routes/teamRoutes.js';
 import shiftRoutes from './routes/shiftRoutes.js';
 import rotationRoutes from './routes/rotationRoutes.js';
+import rosterRoutes from './routes/rosterRoutes.js';
 
 const app = express();
 
@@ -30,6 +31,7 @@ app.use('/api/profile/me', profileRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/shifts', shiftRoutes);
 app.use('/api/rotations', rotationRoutes);
+app.use('/api/rosters', rosterRoutes);
 app.use('/api', userRoutes);
 
 // 404 Route Not Found

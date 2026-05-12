@@ -35,9 +35,16 @@ export const RotationDetail = sequelize.define(
     timestamps: false,
     indexes: [
       {
+        // One team per day per cycle
         unique: true,
         fields: ['rotation_id', 'day_number', 'team_id'],
         name: 'uq_rotation_day_team',
+      },
+      {
+        // One team per shift per day per cycle
+        unique: true,
+        fields: ['rotation_id', 'day_number', 'shift_id'],
+        name: 'uq_rotation_day_shift',
       },
     ],
   }

@@ -37,7 +37,7 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Invalid credentials', 401));
   }
 
-  const token = generateToken({id: user.user_id, role: user.role});
+  const token = generateToken({ id: user.user_id, role: user.role });
 
   res.cookie('token', token, COOKIE_OPTIONS);
 
