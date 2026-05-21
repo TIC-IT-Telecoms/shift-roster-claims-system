@@ -1,4 +1,7 @@
 import express from 'express';
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { corsMiddleware } from './middleware/cors.js';
 import helmet from 'helmet';
 import morgan from 'morgan';
