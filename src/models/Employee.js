@@ -29,19 +29,51 @@ export const Employee = sequelize.define(
     },
     hourly_rate: {
       type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
-      defaultValue: 0.0,
+      allowNull: true,
     },
     role: {
-      type: DataTypes.ENUM('Admin', 'Employee'),
-      allowNull: false,
-      defaultValue: 'Employee',
+      type: DataTypes.STRING(20),
+      allowNull: true,
     },
     status: {
       type: DataTypes.ENUM('Active', 'Inactive'),
-      allowNull: false,
       defaultValue: 'Active',
     },
+
+    employment_type: {
+      type: DataTypes.ENUM('Full Time', 'Part Time', 'Contract', 'Intern'),
+      allowNull: true,
+      defaultValue: 'Full Time',
+    },
+    id_number: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      unique: true,
+      comment: 'National ID / Passport number',
+    },
+    address: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+     position: {
+      type: DataTypes.STRING(150),
+      allowNull: true,
+    },
+    supervisor_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: { model: 'employees', key: 'employee_id' },
+      comment: 'Self-referencing FK — points to another employee',
+    },
+    join_date: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      comment: 'Date employee joined the company',
+    },
+    // profile_picture: {
+    //   type: DataTypes.STRING(255),
+    //   allowNull: true,
+    // },
     created_at: {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,

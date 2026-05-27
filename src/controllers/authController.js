@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { User, Employee } from '../models/index.js';
+import { User, Employee, Team } from '../models/index.js';
 import { generateToken } from '../utils/jwt.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ErrorResponse } from '../utils/ErrorResponse.js';
@@ -37,13 +37,21 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Invalid credentials', 401));
   }
 
+  const employee = await Employee.findOne({
+    where: { employee_id: user.employee_id },
+    attributes: ['name', 'email', 'position'],
+    include: [
+      { model: User, as: 'user', attributes: ['role'] },
+      { model: Team, as: 'team', attributes: ['team_name'] },
+    ],
+  });
   const token = generateToken({ id: user.user_id, role: user.role });
 
   res.cookie('token', token, COOKIE_OPTIONS);
 
   logger.info(`User logged in: ID ${user.user_id} | role: ${user.role}`);
 
-  return successResponse(res, { role: user.role }, 'Login successful');
+  return successResponse(res, { employee }, 'Login successful');
 });
 
 // @desc    Logout user
