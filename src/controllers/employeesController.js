@@ -54,7 +54,6 @@ export const getEmployeeById = asyncHandler(async (req, res, next) => {
 export const createEmployee = asyncHandler(async (req, res, next) => {
   const {
     name, email, phone, team_id, hourly_rate, role, password,
-    // New fields
     employment_type, id_number, address, join_date, supervisor_id,
   } = req.body;
 
@@ -101,7 +100,6 @@ export const createEmployee = asyncHandler(async (req, res, next) => {
       {
         name: name.trim(), email: normalizedEmail, phone, team_id,
         hourly_rate, role,
-        // New fields
         employment_type: employment_type || 'Full Time',
         id_number: id_number || null,
         address: address || null,
@@ -147,7 +145,6 @@ export const updateEmployee = asyncHandler(async (req, res, next) => {
 
   const {
     name, email, phone, team_id, hourly_rate, role,
-    // New fields
     employment_type, id_number, address, join_date, supervisor_id,
   } = req.body;
 
@@ -192,7 +189,6 @@ export const updateEmployee = asyncHandler(async (req, res, next) => {
         team_id: team_id ?? employee.team_id,
         hourly_rate: hourly_rate ?? employee.hourly_rate,
         role: role ?? employee.role,
-        // New fields
         employment_type: employment_type ?? employee.employment_type,
         id_number: id_number !== undefined ? id_number : employee.id_number,
         address: address !== undefined ? address : employee.address,
