@@ -1,5 +1,5 @@
 import express from 'express';
-import { login, logout, forgotPassword } from '../controllers/authController.js';
+import { login, verifyOtp, logout, forgotPassword } from '../controllers/authController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -8,9 +8,7 @@ const router = express.Router();
 // @access  Public
 router.post('/login', login);
 
-// @route   POST /api/auth/verify-otp
-// @access  Public
-// router.post('/verify-otp', verifyOtp);
+router.post('/verify-otp', verifyOtp);
 
 // @route   POST /api/auth/logout
 // @access  Private

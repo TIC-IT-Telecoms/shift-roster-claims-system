@@ -6,14 +6,59 @@ import { ErrorResponse } from '../utils/ErrorResponse.js';
 import { successResponse } from '../utils/apiResponse.js';
 import { logger } from '../utils/logger.js';
 
+// @desc    Get all employees
+// @route   GET /api/employees
+// @access  Admin
+export const getEmployees = asyncHandler(async (req, res, next) => {
+  const employees = await Employee.findAll({
+    include: [
+      { model: Team, as: 'team', attributes: ['team_id', 'team_name'] },
+      { model: User, as: 'user', attributes: ['user_id', 'username', 'role'] },
+      {
+        model: Employee,
+        as: 'supervisor',
+        attributes: ['employee_id', 'name', 'role'],
+      },
+    ],
+    order: [['created_at', 'DESC']],
+  });
+
+  return successResponse(res, employees, 'Employees fetched successfully');
+});
+
+// @desc    Get single employee
+// @route   GET /api/employees/:id  
+// @access  Admin
+export const getEmployeeById = asyncHandler(async (req, res, next) => {
+  const employee = await Employee.findByPk(req.params.id, {
+    include: [
+      { model: Team, as: 'team', attributes: ['team_id', 'team_name'] },
+      { model: User, as: 'user', attributes: ['user_id', 'username', 'role'] },
+      {
+        model: Employee,
+        as: 'supervisor',
+        attributes: ['employee_id', 'name', 'role'],
+      },
+    ],
+  });
+
+  if (!employee) {
+    return next(new ErrorResponse('Employee not found', 404));
+  }
+
+  return successResponse(res, employee, 'Employee fetched successfully');
+});
 // @desc    Create employee + user account
 // @route   POST /api/employees
 // @access  Admin
 export const createEmployee = asyncHandler(async (req, res, next) => {
-  const { name, email, phone, team_id, hourly_rate, role, password } = req.body;
+  const {
+    name, email, phone, team_id, hourly_rate, role, password,
+    // New fields
+    employment_type, id_number, address, join_date, supervisor_id,
+  } = req.body;
 
   if (!name || !email || !password) {
-    logger.warn('Employee creation failed: required fields missing');
     return next(new ErrorResponse('name, email and password are required', 400));
   }
 
@@ -21,32 +66,48 @@ export const createEmployee = asyncHandler(async (req, res, next) => {
   const username = normalizedEmail;
 
   const existingEmployee = await Employee.findOne({ where: { email: normalizedEmail } });
-
   if (existingEmployee) {
-    logger.warn(`Employee creation failed: email already exists (${normalizedEmail})`);
     return next(new ErrorResponse('Employee email already exists', 400));
   }
 
   const existingUser = await User.findOne({ where: { username } });
-
   if (existingUser) {
-    logger.warn(`Employee creation failed: username already exists (${username})`);
     return next(new ErrorResponse('Username already exists', 400));
   }
 
   if (team_id) {
     const team = await Team.findByPk(team_id);
+    if (!team) return next(new ErrorResponse('Team not found', 404));
+  }
 
-    if (!team) {
-      logger.warn(`Employee creation failed: team not found (${team_id})`);
-      return next(new ErrorResponse('Team not found', 404));
+  // Validate supervisor exists if provided
+  if (supervisor_id) {
+    const supervisor = await Employee.findByPk(supervisor_id);
+    if (!supervisor) {
+      return next(new ErrorResponse('Supervisor not found', 404));
     }
   }
 
-  // Wrap in transaction — if User.create fails, Employee.create rolls back
+  // Validate id_number uniqueness if provided
+  if (id_number) {
+    const existingId = await Employee.findOne({ where: { id_number } });
+    if (existingId) {
+      return next(new ErrorResponse('ID number already exists', 400));
+    }
+  }
+
   const { employee, user } = await sequelize.transaction(async (t) => {
     const employee = await Employee.create(
-      { name: name.trim(), email: normalizedEmail, phone, team_id, hourly_rate, role },
+      {
+        name: name.trim(), email: normalizedEmail, phone, team_id,
+        hourly_rate, role,
+        // New fields
+        employment_type: employment_type || 'Full Time',
+        id_number: id_number || null,
+        address: address || null,
+        join_date: join_date || null,
+        supervisor_id: supervisor_id || null,
+      },
       { transaction: t }
     );
 
@@ -61,59 +122,17 @@ export const createEmployee = asyncHandler(async (req, res, next) => {
     return { employee, user };
   });
 
-  logger.info(`Employee + User created: Employee ID ${employee.employee_id}, User ID ${user.user_id}`);
+  logger.info(`Employee + User created: ID ${employee.employee_id}`);
 
   return successResponse(
     res,
     {
       employee,
-      user: {
-        user_id: user.user_id,
-        username: user.username,
-        role: user.role,
-      },
+      user: { user_id: user.user_id, username: user.username, role: user.role },
     },
     'Employee created successfully',
     201
   );
-});
-
-// @desc    Get all employees
-// @route   GET /api/employees
-// @access  Admin
-export const getEmployees = asyncHandler(async (req, res, next) => {
-  const employees = await Employee.findAll({
-    include: [
-      { model: Team, as: 'team', attributes: ['team_id', 'team_name'] },
-      { model: User, as: 'user', attributes: ['user_id', 'username', 'role'] },
-    ],
-    order: [['created_at', 'DESC']],
-  });
-
-  logger.info('Employee list fetched successfully');
-
-  return successResponse(res, employees, 'Employees fetched successfully');
-});
-
-// @desc    Get single employee
-// @route   GET /api/employees/:id
-// @access  Admin
-export const getEmployeeById = asyncHandler(async (req, res, next) => {
-  const employee = await Employee.findByPk(req.params.id, {
-    include: [
-      { model: Team, as: 'team', attributes: ['team_id', 'team_name'] },
-      { model: User, as: 'user', attributes: ['user_id', 'username', 'role'] },
-    ],
-  });
-
-  if (!employee) {
-    logger.warn(`Employee not found: ID ${req.params.id}`);
-    return next(new ErrorResponse('Employee not found', 404));
-  }
-
-  logger.info(`Employee fetched: ID ${employee.employee_id}`);
-
-  return successResponse(res, employee, 'Employee fetched successfully');
 });
 
 // @desc    Update employee
@@ -123,42 +142,70 @@ export const updateEmployee = asyncHandler(async (req, res, next) => {
   const employee = await Employee.findByPk(req.params.id);
 
   if (!employee) {
-    logger.warn(`Update failed: Employee not found (${req.params.id})`);
     return next(new ErrorResponse('Employee not found', 404));
   }
 
-  // Whitelist only updatable fields — prevent body injection
-  const { name, email, phone, team_id, hourly_rate, role } = req.body;
+  const {
+    name, email, phone, team_id, hourly_rate, role,
+    // New fields
+    employment_type, id_number, address, join_date, supervisor_id,
+  } = req.body;
 
   if (team_id) {
     const team = await Team.findByPk(team_id);
+    if (!team) return next(new ErrorResponse('Team not found', 404));
+  }
 
-    if (!team) {
-      logger.warn(`Update failed: Team not found (${team_id})`);
-      return next(new ErrorResponse('Team not found', 404));
+  // Validate supervisor
+  if (supervisor_id) {
+    if (Number(supervisor_id) === employee.employee_id) {
+      return next(new ErrorResponse('An employee cannot be their own supervisor', 400));
+    }
+    const supervisor = await Employee.findByPk(supervisor_id);
+    if (!supervisor) return next(new ErrorResponse('Supervisor not found', 404));
+  }
+
+  // Email uniqueness
+  let normalizedEmail = employee.email;
+  if (email) {
+    normalizedEmail = email.trim().toLowerCase();
+    const existing = await Employee.findOne({ where: { email: normalizedEmail } });
+    if (existing && existing.employee_id !== employee.employee_id) {
+      return next(new ErrorResponse('Employee email already exists', 400));
     }
   }
 
-  let normalizedEmail = employee.email;
-
-  if (email) {
-    normalizedEmail = email.trim().toLowerCase();
-
-    const existingEmployee = await Employee.findOne({ where: { email: normalizedEmail } });
-
-    if (existingEmployee && existingEmployee.employee_id !== employee.employee_id) {
-      logger.warn(`Update failed: email already exists (${normalizedEmail})`);
-      return next(new ErrorResponse('Employee email already exists', 400));
+  // ID number uniqueness
+  if (id_number && id_number !== employee.id_number) {
+    const existingId = await Employee.findOne({ where: { id_number } });
+    if (existingId && existingId.employee_id !== employee.employee_id) {
+      return next(new ErrorResponse('ID number already exists', 400));
     }
   }
 
   await sequelize.transaction(async (t) => {
     await employee.update(
-      { name, email: normalizedEmail, phone, team_id, hourly_rate, role },
+      {
+        name: name ?? employee.name,
+        email: normalizedEmail,
+        phone: phone ?? employee.phone,
+        team_id: team_id ?? employee.team_id,
+        hourly_rate: hourly_rate ?? employee.hourly_rate,
+        role: role ?? employee.role,
+        // New fields
+        employment_type: employment_type ?? employee.employment_type,
+        id_number: id_number !== undefined ? id_number : employee.id_number,
+        address: address !== undefined ? address : employee.address,
+        join_date: join_date ?? employee.join_date,
+        supervisor_id: supervisor_id !== undefined ? supervisor_id : employee.supervisor_id,
+      },
       { transaction: t }
     );
 
-    const user = await User.findOne({ where: { employee_id: employee.employee_id }, transaction: t });
+    const user = await User.findOne({
+      where: { employee_id: employee.employee_id },
+      transaction: t,
+    });
 
     if (user) {
       if (email) user.username = normalizedEmail;
