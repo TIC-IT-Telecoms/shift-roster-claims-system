@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
-import { User, Employee } from '../models/index.js';
-import { generateToken } from '../utils/jwt.js';
+import { User } from '../models/index.js';
+import { generateToken } from '../utils/jwt.js'; 
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ErrorResponse } from '../utils/ErrorResponse.js';
 import { successResponse } from '../utils/apiResponse.js';
@@ -13,7 +13,7 @@ const COOKIE_OPTIONS = {
   maxAge: 24 * 60 * 60 * 1000, // 1 day
 };
 
-// @desc    Login user
+// @desc    Login user (Direct single-phase password verification)
 // @route   POST /api/auth/login
 // @access  Public
 export const login = asyncHandler(async (req, res, next) => {
@@ -37,13 +37,21 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Invalid credentials', 401));
   }
 
+  // Issue the authenticated JWT session token directly upon successful password check
   const token = generateToken({ id: user.user_id, role: user.role });
-
   res.cookie('token', token, COOKIE_OPTIONS);
 
-  logger.info(`User logged in: ID ${user.user_id} | role: ${user.role}`);
+  logger.info(`User authenticated successfully: ${user.role} (User ID: ${user.user_id})`);
 
-  return successResponse(res, { role: user.role }, 'Login successful');
+  // Instantly return the redirection route so the frontend can route the user immediately
+  return successResponse(
+    res, 
+    { 
+      role: user.role,
+      redirectTo: user.role === 'Admin' ? '/admin/dashboard' : '/employee/dashboard'
+    }, 
+    'Authentication completed successfully'
+  );
 });
 
 // @desc    Logout user
@@ -51,12 +59,9 @@ export const login = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const logout = asyncHandler(async (req, res) => {
   res.clearCookie('token', COOKIE_OPTIONS);
-
   logger.info(`User logged out: ID ${req.user?.id}`);
-
   return successResponse(res, null, 'Logged out successfully');
 });
-
 
 // @desc    Verify employee by email before password reset
 // @route   POST /api/auth/forgot-password
@@ -70,20 +75,13 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
 
   const normalizedEmail = email.trim().toLowerCase();
 
-  const employee = await Employee.findOne({
-    where: { email: normalizedEmail },
-    include: [{ association: 'user', attributes: ['user_id'] }],
-  });
+  const user = await User.findOne({ where: { username: normalizedEmail } });
 
-  // Always return the same response whether found or not — prevents email enumeration
-  if (!employee || !employee.user) {
+  if (!user) {
     logger.warn(`Forgot password: no account found for email "${normalizedEmail}"`);
     return successResponse(res, null, 'If this email is registered, an admin will assist with your reset');
   }
 
-  logger.info(`Forgot password requested for employee ID ${employee.employee_id}`);
-
-  // No token or link yet — flagging for admin-assisted reset
-  // TODO: integrate email/notification service when available
+  logger.info(`Forgot password requested for username ${normalizedEmail}`);
   return successResponse(res, null, 'If this email is registered, an admin will assist with your reset');
 });

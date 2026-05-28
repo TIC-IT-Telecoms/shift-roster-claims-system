@@ -8,6 +8,10 @@ const router = express.Router();
 // @access  Public
 router.post('/login', login);
 
+// @route   POST /api/auth/verify-otp
+// @access  Public
+// router.post('/verify-otp', verifyOtp);
+
 // @route   POST /api/auth/logout
 // @access  Private
 router.post('/logout', protect, logout);
