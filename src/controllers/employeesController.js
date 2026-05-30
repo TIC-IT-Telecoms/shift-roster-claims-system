@@ -244,6 +244,29 @@ export const deactivateEmployee = asyncHandler(async (req, res, next) => {
   return successResponse(res, null, 'Employee deactivated successfully');
 });
 
+// @desc    Activate employee
+// @route   PATCH /api/employees/:id/activate
+// @access  Admin
+export const activateEmployee = asyncHandler(async (req, res, next) => {
+  const employee = await Employee.findByPk(req.params.id);
+
+  if (!employee) {
+    logger.warn(`Activate failed: Employee not found (${req.params.id})`);
+    return next(new ErrorResponse('Employee not found', 404));
+  }
+
+  if (employee.status === 'Active') {
+    logger.warn(`Activate failed: Employee already active (${employee.employee_id})`);
+    return next(new ErrorResponse('Employee is already active', 400));
+  }
+
+  employee.status = 'Active';
+  await employee.save();
+
+  logger.info(`Employee activated: ID ${employee.employee_id}`);
+  return successResponse(res, null, 'Employee activated successfully');
+});
+
 // @desc    Assign employee to team
 // @route   PATCH /api/employees/:id/assign-team
 // @access  Admin
