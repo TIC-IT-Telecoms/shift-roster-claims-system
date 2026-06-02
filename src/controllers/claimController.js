@@ -1,4 +1,4 @@
-import { Employee, User, Claim, Approval } from '../models/index.js';
+import { Employee, User, Claim, Approval, Team } from '../models/index.js';
 import { getCurrentUserContext } from '../utils/authHelpers.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { successResponse } from '../utils/apiResponse.js';
@@ -79,7 +79,14 @@ export const getAllClaims = asyncHandler(async (req, res, next) => {
       {
         model: Employee,
         as: 'employee',
-        attributes: ['employee_id', 'name', 'email'] // Uses 'name' to match your database schema
+        attributes: ['employee_id', 'name', 'email', 'hourly_rate'], // Uses 'name' to match your database schema
+        include: [
+          {
+            model: Team,
+            as: 'team',
+            attributes: ['team_name']
+          }
+        ]
       },
       {
         model: Approval,
