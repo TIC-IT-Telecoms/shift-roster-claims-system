@@ -13,6 +13,7 @@ import {
   sendAdminNewClaimAlertEmail, 
   sendClaimStatusUpdateEmail 
 } from '../utils/emailService.js';
+import { where } from 'sequelize';
 
 // @desc    Create a new claim
 // @route   POST /api/claims
@@ -27,8 +28,18 @@ export const createClaim = asyncHandler(async (req, res, next) => {
   // Self-Assign Ownership: Uses the user id embedded in the JWT payload by authController
   const userId = req.user.user_id || req.user.id;
 
+  // Find the user record
+const user = await User.findByPk(userId);
+
+if (!user) {
+  return res.status(404).json({
+    success: false,
+    message: 'User not found'
+  });
+}
+
   const claim = await Claim.create({
-    employee_id: userId,
+    employee_id: user.employee_id,
     claim_date,
     shift_type,
     hours_worked: hours_worked || 0,
@@ -41,21 +52,21 @@ export const createClaim = asyncHandler(async (req, res, next) => {
 
   // ─── EMAIL NOTIFICATION ENGINE (SUBMISSION) ────────────────────────────────
   // Fetch the current employee's profile information to extract email details safely
-  const currentEmployee = await Employee.findByPk(userId);
-  
-  if (currentEmployee) {
-    // 1. Dispatch confirmation receipt back to the employee
-    sendEmployeeClaimSubmissionEmail(currentEmployee.email, currentEmployee.name, claim);
+  // const currentEmployee = await Employee.findByPk({ where: { employee_id: user.employee_id } });
 
-    // 2. Locate active Administrators to ping them about the incoming review action
-    User.findAll({ where: { role: 'Admin' } })
-      .then((administrators) => {
-        administrators.forEach((admin) => {
-          sendAdminNewClaimAlertEmail(admin.username, currentEmployee.name, claim);
-        });
-      })
-      .catch((err) => logger.error(`Admin review email distribution error: ${err.message}`));
-  }
+  // if (currentEmployee) {
+  //   // 1. Dispatch confirmation receipt back to the employee
+  //   sendEmployeeClaimSubmissionEmail(currentEmployee.email, currentEmployee.name, claim);
+
+  //   // 2. Locate active Administrators to ping them about the incoming review action
+  //   User.findAll({ where: { role: 'Admin' } })
+  //     .then((administrators) => {
+  //       administrators.forEach((admin) => {
+  //         sendAdminNewClaimAlertEmail(admin.username, currentEmployee.name, claim);
+  //       });
+  //     })
+  //     .catch((err) => logger.error(`Admin review email distribution error: ${err.message}`));
+  // }
   // ────────────────────────────────────────────────────────────────────────────
 
   return successResponse(res, claim, 'Claim submitted successfully', 201);
