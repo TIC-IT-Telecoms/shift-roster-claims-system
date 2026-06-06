@@ -55,7 +55,7 @@ export const Employee = sequelize.define(
       type: DataTypes.TEXT,
       allowNull: true,
     },
-     position: {
+    position: {
       type: DataTypes.STRING(150),
       allowNull: true,
     },
@@ -65,18 +65,14 @@ export const Employee = sequelize.define(
       references: { model: 'employees', key: 'employee_id' },
       comment: 'Self-referencing FK — points to another employee',
     },
-    join_date: {
-      type: DataTypes.DATEONLY,
-      allowNull: true,
-      comment: 'Date employee joined the company',
-    },
     // profile_picture: {
     //   type: DataTypes.STRING(255),
     //   allowNull: true,
     // },
     created_at: {
       type: DataTypes.DATE,
-      defaultValue: DataTypes.NOW,
+      allowNull: false,
+      defaultValue: sequelize.literal('CURRENT_DATE'),
     },
   },
   {

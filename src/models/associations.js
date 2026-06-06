@@ -9,6 +9,7 @@ import { Claim } from './Claim.js';
 import { Approval } from './Approval.js';
 import { Payroll } from './Payroll.js';
 import { ComplianceFlag } from './ComplianceFlag.js';
+import { Notification } from './Notification.js';
 
 export const defineAssociations = () => {
   // Team -> Employee
@@ -66,4 +67,8 @@ export const defineAssociations = () => {
   // Employee -> ComplianceFlag
   Employee.hasMany(ComplianceFlag, { foreignKey: 'employee_id', as: 'complianceFlags' });
   ComplianceFlag.belongsTo(Employee, { foreignKey: 'employee_id', as: 'employee' });
+
+  // User -> Notification
+  User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications' });
+  Notification.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 };

@@ -16,7 +16,7 @@ export const getProfile = asyncHandler(async (req, res, next) => {
         association: 'employee',
         attributes: [
           'employee_id', 'name', 'email', 'phone', 'hourly_rate', 'status',
-          'role', 'employment_type', 'id_number', 'address', 'join_date', //'profile_picture',
+          'role', 'employment_type', 'id_number', 'address', 'created_at', //'profile_picture',
         ],
         include: [
           {

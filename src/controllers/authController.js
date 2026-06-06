@@ -73,6 +73,11 @@ export const login = asyncHandler(async (req, res, next) => {
   // return successResponse(res, { username: user.username, requiresOtp: true },
   //   `Verification code sent to your registered email address (${user.role} verification required)`
   // );
+  await User.update(
+    { last_login: new Date() },
+    { where: { user_id: user.user_id } }
+  );
+
   return successResponse(res, { employee },
     `Login successful. Welcome back, ${employee.name}!`
   );

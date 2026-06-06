@@ -1,31 +1,22 @@
 import express from 'express';
-import { protect, authorizeRoles } from '../middleware/authMiddleware.js';
 import {
-  createClaim,
-  getAllClaims,
-  getClaimById,
-  updateClaim,
-  reviewClaim,
-  deleteClaim
+  submitClaim, getMyClaims, getAllClaims, getClaimById,
+  updateClaim, reviewClaim, resetClaimStatus, deleteClaim,
 } from '../controllers/claimController.js';
+import { protect, authorizeRoles } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Enforce authentication across all claim pathways
-router.use(protect);
+//  Employee routes
+router.post('/', protect, submitClaim);
+router.get('/me', protect, getMyClaims);
+router.put('/:id', protect, updateClaim);
 
-// Standard collection pathways
-router.route('/')
-  .post(authorizeRoles('Employee'), createClaim) // Only employees can submit fresh claims
-  .get(getAllClaims);                        // Admins see everything; Employees see only their own records
-
-// Individual claim pathways
-router.route('/:id')
-  .get(getClaimById)                             // Securely routes view rights depending on role/ownership
-  .put(authorizeRoles('Employee'), updateClaim)  // Only the owning employee can alter a pending claim
-  .delete(authorizeRoles('Employee'), deleteClaim); // Only the owning employee can delete a pending claim
-
-// Administrative approval pathway
-router.patch('/:id/status', authorizeRoles('Admin'), reviewClaim);
+//  Admin routes
+router.get('/', protect, authorizeRoles('Admin'), getAllClaims);
+router.get('/:id', protect, authorizeRoles('Admin'), getClaimById);
+router.patch('/:id/status', protect, authorizeRoles('Admin'), reviewClaim);
+router.patch('/:id/reset', protect, authorizeRoles('Admin'), resetClaimStatus);
+router.delete('/:id', protect, authorizeRoles('Admin'), deleteClaim);
 
 export default router;

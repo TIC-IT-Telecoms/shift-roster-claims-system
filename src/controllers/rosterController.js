@@ -1,7 +1,7 @@
 import { Op } from 'sequelize';
 import {
   Roster, Employee, Shift, Team,
-  RotationCycle, RotationDetail, //PublicHoliday,
+  RotationCycle, RotationDetail,
 } from '../models/index.js';
 import { sequelize } from '../config/database.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -9,11 +9,9 @@ import { ErrorResponse } from '../utils/ErrorResponse.js';
 import { successResponse } from '../utils/apiResponse.js';
 import { logger } from '../utils/logger.js';
 import {
-  getPublicHolidaySet,
-  iterateDateRange,
-  resolveCycleDay,
-  validateDateRange,
-} from '../utils/rosterUtils.js';
+  getPublicHolidaySet, iterateDateRange,
+  resolveCycleDay, validateDateRange, getNextDay,
+} from '../utils/rotationUtils.js';
 
 // ===== Shared include config =====
 const rosterInclude = [
@@ -31,10 +29,9 @@ const rosterInclude = [
 ];
 
 // ===== Build and validate rotation map from a single cycle =====
-// Returns { team_id: { day_number: shift_id } }
-const buildRotationMap = (cycle, next) => {
+const buildRotationMap = (cycle) => {
   const rotationMap = {};
-  const shiftDayMap = {}; // { day_number: { shift_id: team_id } }
+  const shiftDayMap = {};
 
   for (const detail of cycle.details) {
     const { team_id, day_number, shift_id } = detail;
@@ -50,7 +47,6 @@ const buildRotationMap = (cycle, next) => {
     }
 
     shiftDayMap[day_number][shift_id] = team_id;
-
     if (!rotationMap[team_id]) rotationMap[team_id] = {};
     rotationMap[team_id][day_number] = shift_id;
   }
@@ -62,34 +58,26 @@ const buildRotationMap = (cycle, next) => {
 // @route   POST /api/rosters/generate
 // @access  Admin
 export const generateRoster = asyncHandler(async (req, res, next) => {
-  const { rotation_ids, start_date, end_date, default_shift_id } = req.body;
+  const { rotation_ids, start_date, end_date } = req.body;
 
-  // Accept single rotation_id or array
+  // default_shift_id removed — holidays no longer override the shift.
+  // The rotation shift is always used. is_public_holiday is just a flag
+  // that affects pay rate calculations in claims and payroll.
   const ids = Array.isArray(rotation_ids)
     ? rotation_ids
-    : rotation_ids
-    ? [rotation_ids]
-    : [];
+    : rotation_ids ? [rotation_ids] : [];
 
-  if (!ids.length || !start_date || !end_date || !default_shift_id) {
-    return next(
-      new ErrorResponse(
-        'rotation_ids (single or array), start_date, end_date and default_shift_id are required',
-        400
-      )
-    );
+  if (!ids.length || !start_date || !end_date) {
+    return next(new ErrorResponse(
+      'rotation_ids (single or array), start_date and end_date are required',
+      400
+    ));
   }
 
   const rangeError = validateDateRange(start_date, end_date);
   if (rangeError) return next(new ErrorResponse(rangeError, 400));
 
-  // Validate default shift
-  const defaultShift = await Shift.findByPk(default_shift_id);
-  if (!defaultShift) {
-    return next(new ErrorResponse('Default shift not found', 404));
-  }
-
-  // Load all cycles with their details
+  // Load all cycles with details
   const cycles = await RotationCycle.findAll({
     where: { rotation_id: { [Op.in]: ids } },
     include: [
@@ -104,57 +92,46 @@ export const generateRoster = asyncHandler(async (req, res, next) => {
     ],
   });
 
-  // Verify all requested cycles were found
   if (cycles.length !== ids.length) {
     const foundIds = cycles.map((c) => c.rotation_id);
     const missingIds = ids.filter((id) => !foundIds.includes(Number(id)));
     return next(new ErrorResponse(`Rotation cycles not found: ${missingIds.join(', ')}`, 404));
   }
 
-  // Verify all cycles have details
   for (const cycle of cycles) {
     if (!cycle.details?.length) {
-      return next(
-        new ErrorResponse(
-          `Cycle "${cycle.cycle_name}" has no details defined. ` +
-          `Add day/team/shift assignments first.`,
-          400
-        )
-      );
+      return next(new ErrorResponse(
+        `Cycle "${cycle.cycle_name}" has no details defined. ` +
+        `Add day/team/shift assignments first.`,
+        400
+      ));
     }
   }
 
-  // Build rotation maps for all cycles
-  // Merged map: { team_id: { cycle, rotationMap } }
-  // Each team belongs to exactly one cycle
-  const teamCycleMap = {}; // { team_id: { cycle, rotationMap } }
+  // Build team → cycle + rotation map
+  const teamCycleMap = {};
 
   for (const cycle of cycles) {
     let rotationMap;
-
     try {
       rotationMap = buildRotationMap(cycle);
     } catch (err) {
       return next(err);
     }
 
-    // Check no team appears in more than one cycle
     for (const teamId of Object.keys(rotationMap)) {
       if (teamCycleMap[teamId]) {
-        return next(
-          new ErrorResponse(
-            `Team ID ${teamId} appears in both "${teamCycleMap[teamId].cycle.cycle_name}" ` +
-            `and "${cycle.cycle_name}". Each team must belong to exactly one cycle.`,
-            400
-          )
-        );
+        return next(new ErrorResponse(
+          `Team ID ${teamId} appears in both "${teamCycleMap[teamId].cycle.cycle_name}" ` +
+          `and "${cycle.cycle_name}". Each team must belong to exactly one cycle.`,
+          400
+        ));
       }
-
       teamCycleMap[teamId] = { cycle, rotationMap };
     }
   }
 
-  // Fetch all active employees with their team
+  // Fetch active employees
   const employees = await Employee.findAll({
     where: { status: 'Active' },
     include: [{ model: Team, as: 'team', attributes: ['team_id', 'team_name'] }],
@@ -164,8 +141,10 @@ export const generateRoster = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('No active employees found', 404));
   }
 
-  // Fetch public holidays in range
-  const holidaySet = await getPublicHolidaySet(start_date, end_date);
+  // Fetch public holidays for the range PLUS one day beyond end_date
+  // (needed to flag grave shifts whose overnight portion lands on a holiday)
+  const extendedEnd = getNextDay(end_date);
+  const holidaySet = await getPublicHolidaySet(start_date, extendedEnd);
 
   // Fetch existing roster entries to skip
   const existingRosters = await Roster.findAll({
@@ -187,40 +166,31 @@ export const generateRoster = asyncHandler(async (req, res, next) => {
   let offCount = 0;
 
   for (const dateStr of iterateDateRange(start_date, end_date)) {
+
+    // ── Holiday flags ──────────────────────────────────────────────────────
+    // is_public_holiday: true when the roster_date itself is a holiday.
+    // For grave shifts the NEXT day also matters — that is handled at
+    // claim/payroll calculation time using getNextDay() + holidaySet lookup.
+    // We store is_public_holiday on the roster so the frontend can display
+    // the flag, but the shift assignment is NEVER changed.
     const isHoliday = holidaySet.has(dateStr);
 
     for (const employee of employees) {
       const key = `${employee.employee_id}-${dateStr}`;
 
-      if (existingSet.has(key)) {
-        skipped++;
-        continue;
-      }
+      if (existingSet.has(key)) { skipped++; continue; }
 
-      // Public holiday — use default shift regardless of rotation
-      if (isHoliday) {
-        toInsert.push({
-          employee_id: employee.employee_id,
-          shift_id: default_shift_id,
-          roster_date: dateStr,
-          is_public_holiday: true,
-          status: 'Holiday',
-        });
-        holidayCount++;
-        continue;
-      }
-
-      const teamId = employee.team_id;
+      const teamId    = employee.team_id;
       const teamEntry = teamCycleMap[teamId];
 
-      // Employee has no team or team not in any cycle — mark Off
+      // ── No team or team not in any cycle ──────────────────────────────
       if (!teamEntry) {
         toInsert.push({
-          employee_id: employee.employee_id,
-          shift_id: null,
-          roster_date: dateStr,
-          is_public_holiday: false,
-          status: 'Off',
+          employee_id:       employee.employee_id,
+          shift_id:          null,
+          roster_date:       dateStr,
+          is_public_holiday: isHoliday,
+          status:            'Off',
         });
         offCount++;
         continue;
@@ -229,30 +199,36 @@ export const generateRoster = asyncHandler(async (req, res, next) => {
       const { cycle, rotationMap } = teamEntry;
       const cycleDay = resolveCycleDay(cycle.start_date, cycle.cycle_length, dateStr);
 
-      // Date is before cycle start — mark Off
+      // ── Date before cycle start ───────────────────────────────────────
       if (cycleDay === null) {
         toInsert.push({
-          employee_id: employee.employee_id,
-          shift_id: null,
-          roster_date: dateStr,
-          is_public_holiday: false,
-          status: 'Off',
+          employee_id:       employee.employee_id,
+          shift_id:          null,
+          roster_date:       dateStr,
+          is_public_holiday: isHoliday,
+          status:            'Off',
         });
         offCount++;
         continue;
       }
 
-      // Resolve shift from this employee's cycle rotation map
+      // ── Resolve shift from rotation ───────────────────────────────────
       const shiftId = rotationMap[teamId]?.[cycleDay] ?? null;
 
+      // KEY RULE:
+      // is_public_holiday is ONLY a flag — it never changes the assigned shift.
+      // The same shift is worked regardless of whether it's a holiday.
+      // Pay rate adjustments (including grave shift midnight splits) are
+      // calculated in claims and payroll using calculateHolidayHours().
       toInsert.push({
-        employee_id: employee.employee_id,
-        shift_id: shiftId,
-        roster_date: dateStr,
-        is_public_holiday: false,
-        status: shiftId ? 'Scheduled' : 'Off',
+        employee_id:       employee.employee_id,
+        shift_id:          shiftId,
+        roster_date:       dateStr,
+        is_public_holiday: isHoliday,
+        status:            shiftId ? 'Scheduled' : 'Off',
       });
 
+      if (isHoliday && shiftId) holidayCount++;
       if (!shiftId) offCount++;
     }
   }
@@ -270,18 +246,18 @@ export const generateRoster = asyncHandler(async (req, res, next) => {
     `Roster generated: Cycles [${ids.join(', ')}] | ` +
     `Range: ${start_date} → ${end_date} | ` +
     `Inserted: ${toInsert.length} | Skipped: ${skipped} | ` +
-    `Holidays: ${holidayCount} | Off: ${offCount}`
+    `Holiday-flagged: ${holidayCount} | Off: ${offCount}`
   );
 
   return successResponse(
     res,
     {
-      rotation_cycles: cycles.map((c) => c.cycle_name),
-      date_range: { start_date, end_date },
-      total_inserted: toInsert.length,
-      total_skipped: skipped,
-      holiday_entries: holidayCount,
-      off_entries: offCount,
+      rotation_cycles:   cycles.map((c) => c.cycle_name),
+      date_range:        { start_date, end_date },
+      total_inserted:    toInsert.length,
+      total_skipped:     skipped,
+      holiday_flagged:   holidayCount,
+      off_entries:       offCount,
       employees_processed: employees.length,
     },
     'Roster generated successfully',
@@ -330,7 +306,6 @@ export const getRosters = asyncHandler(async (req, res, next) => {
     ],
   });
 
-  // Group by date
   const grouped = {};
   for (const entry of rosters) {
     const date = entry.roster_date;
@@ -394,11 +369,7 @@ export const getEmployeeRoster = asyncHandler(async (req, res, next) => {
   return successResponse(
     res,
     {
-      employee: {
-        employee_id: employee.employee_id,
-        name: employee.name,
-        team: employee.team,
-      },
+      employee: { employee_id: employee.employee_id, name: employee.name, team: employee.team },
       date_range: { start_date, end_date },
       total: rosters.length,
       roster: rosters,
@@ -459,7 +430,7 @@ export const getMyRoster = asyncHandler(async (req, res, next) => {
 // @route   PATCH /api/rosters/:id
 // @access  Admin
 export const updateRosterEntry = asyncHandler(async (req, res, next) => {
-  const { shift_id, status } = req.body;
+  const { shift_id, status, is_public_holiday } = req.body;
 
   const entry = await Roster.findByPk(req.params.id, { include: rosterInclude });
 
@@ -470,9 +441,9 @@ export const updateRosterEntry = asyncHandler(async (req, res, next) => {
 
   const validStatuses = ['Scheduled', 'Off', 'Holiday'];
   if (status && !validStatuses.includes(status)) {
-    return next(
-      new ErrorResponse(`Invalid status. Must be one of: ${validStatuses.join(', ')}`, 400)
-    );
+    return next(new ErrorResponse(
+      `Invalid status. Must be one of: ${validStatuses.join(', ')}`, 400
+    ));
   }
 
   if (shift_id) {
@@ -481,11 +452,16 @@ export const updateRosterEntry = asyncHandler(async (req, res, next) => {
   }
 
   await entry.update({
-    shift_id: shift_id !== undefined ? shift_id : entry.shift_id,
-    status: status ?? entry.status,
+    shift_id:          shift_id !== undefined ? shift_id : entry.shift_id,
+    status:            status ?? entry.status,
+    is_public_holiday: is_public_holiday !== undefined ? is_public_holiday : entry.is_public_holiday,
   });
 
-  logger.info(`Roster entry updated: ID ${entry.roster_id} | Employee ID ${entry.employee_id}`);
+  logger.info(
+    `Roster entry updated: ID ${entry.roster_id} | ` +
+    `Employee ID ${entry.employee_id} | ` +
+    `Holiday: ${entry.is_public_holiday}`
+  );
 
   return successResponse(res, entry, 'Roster entry updated successfully');
 });
