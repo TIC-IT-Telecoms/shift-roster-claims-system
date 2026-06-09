@@ -5,15 +5,9 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { ErrorResponse } from '../utils/ErrorResponse.js';
 import { successResponse } from '../utils/apiResponse.js';
 import { logger } from '../utils/logger.js';
-import {
-  resolveCurrentDay,
-  isCycleActive,
-  getActiveCycles,
-  validateDetails,
-  checkCycleOverlap,
-} from '../utils/rotationUtils.js';
+import { resolveCurrentDay, isCycleActive, getActiveCycles,
+  validateDetails, checkCycleOverlap } from '../utils/rotationUtils.js';
 
-// ===== Include config reused across queries =====
 const detailInclude = [
   {
     model: RotationDetail,
@@ -27,7 +21,7 @@ const detailInclude = [
       },
     ],
     order: [['day_number', 'ASC']],
-    separate: true, // Ensures correct ordering with eager loading in MySQL
+    separate: true,
   },
 ];
 
@@ -38,16 +32,16 @@ export const createRotationCycle = asyncHandler(async (req, res, next) => {
   const { cycle_name, cycle_length, description, start_date, details } = req.body;
 
   if (!cycle_name || !cycle_length || !start_date) {
-    return next(new ErrorResponse('cycle_name, cycle_length and start_date are required', 400));
+    return next(new ErrorResponse('cycle name, cycle length and start date are required', 400));
   }
 
   if (!Number.isInteger(Number(cycle_length)) || Number(cycle_length) < 1) {
-    return next(new ErrorResponse('cycle_length must be a positive integer', 400));
+    return next(new ErrorResponse('cycle length must be a positive integer', 400));
   }
 
   // Validate start_date format
   if (isNaN(Date.parse(start_date))) {
-    return next(new ErrorResponse('start_date must be a valid date (YYYY-MM-DD)', 400));
+    return next(new ErrorResponse('start date must be a valid date (YYYY-MM-DD)', 400));
   }
 
   const existing = await RotationCycle.findOne({ where: { cycle_name: cycle_name.trim() } });
@@ -268,7 +262,6 @@ export const updateRotationCycle = asyncHandler(async (req, res, next) => {
     }
   }
 
-  // Warn if start_date change causes overlap with other active cycles
   let warning = null;
   if (start_date && start_date !== cycle.start_date) {
     if (isNaN(Date.parse(start_date))) {
@@ -313,7 +306,6 @@ export const updateRotationDetails = asyncHandler(async (req, res, next) => {
   }
 
   await sequelize.transaction(async (t) => {
-    // Validate before wiping — if validation fails nothing is touched
     await validateDetails(details, cycle.cycle_length, t);
 
     await RotationDetail.destroy({
@@ -356,7 +348,7 @@ export const deleteRotationCycle = asyncHandler(async (req, res, next) => {
     return next(
       new ErrorResponse(
         `Cannot delete an active rotation cycle (currently on Day ${currentDay}). ` +
-        `Update the start_date to a future date first.`,
+        `Update the start date to a future date first.`,
         400
       )
     );
