@@ -1,11 +1,14 @@
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { Op } from 'sequelize';
 import { generateToken } from '../utils/jwt.js';
 import { Employee, Team, User } from '../models/index.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ErrorResponse } from '../utils/ErrorResponse.js';
 import { successResponse } from '../utils/apiResponse.js';
 import { logger } from '../utils/logger.js';
-// import { sendOtpEmail } from '../utils/emailService.js';
+import { sendOtpEmail } from '../utils/emailService.js';
+import { sendResetEmail } from '../utils/emailService.js';
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -131,7 +134,7 @@ export const logout = asyncHandler(async (req, res) => {
   return successResponse(res, null, 'Logged out successfully');
 });
 
-// @desc    Verify employee by email before password reset
+// @desc    Verify employee email and dispatch a secure reset token link
 // @route   POST /api/auth/forgot-password
 // @access  Public
 export const forgotPassword = asyncHandler(async (req, res, next) => {
@@ -140,14 +143,81 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
   if (!email) {
     return next(new ErrorResponse('Email is required', 400));
   }
+  
   const normalizedEmail = email.trim().toLowerCase();
   const user = await User.findOne({ where: { username: normalizedEmail } });
 
+  // Security Note: We return success regardless to mitigate account harvesting scanning attacks
   if (!user) {
-    logger.warn(`Forgot password: no account found for email "${normalizedEmail}"`);
-    return successResponse(res, null, 'If this email is registered, an admin will assist with your reset');
+    logger.warn(`Forgot password lookup failed: non-existent target "${normalizedEmail}"`);
+    return successResponse(res, null, 'If this email is registered, a password reset link has been dispatched.');
   }
 
-  logger.info(`Forgot password requested for username ${normalizedEmail}`);
-  return successResponse(res, null, 'If this email is registered, an admin will assist with your reset');
-}); 
+  // Generate unique crypto string and establish 1 hour lifecycle
+  const resetToken = crypto.randomBytes(20).toString('hex');
+  const tokenExpires = Date.now() + 3600000; // 1 Hour lifespan
+
+  // Store variables safely in DB
+  await user.update({
+    reset_password_token: resetToken,
+    reset_password_expires: tokenExpires
+  });
+
+  // Automatically adapt link based on whether frontend requests from port 5173 or 3000
+  const requestOrigin = req.get('origin') || 'http://localhost:5173';
+  const resetUrl = `${requestOrigin}/reset-password?token=${resetToken}`;
+
+  try {
+    // Fire the real SMTP transport dispatch rule
+    await sendResetEmail(user.username, resetUrl);
+    
+    return successResponse(res, null, 'If this email is registered, a password reset link has been dispatched.');
+  } catch (error) {
+    // Clear token out if email dispatch crashes completely
+    await user.update({ reset_password_token: null, reset_password_expires: null });
+    return next(new ErrorResponse('Email delivery system failed. Please contact support.', 500));
+  }
+});
+
+// @desc    Consume secure reset token payload, validate expiry, and rewrite login hash
+// @route   POST /api/auth/reset-password
+// @access  Public
+export const resetPassword = asyncHandler(async (req, res, next) => {
+  const { reset_token, new_password, confirm_password } = req.body;
+
+  if (!reset_token) {
+    return next(new ErrorResponse('Reset token is missing or corrupted.', 400));
+  }
+
+  if (!new_password || new_password.length < 8) {
+    return next(new ErrorResponse('A valid password of at least 8 characters is required.', 400));
+  }
+
+  if (new_password !== confirm_password) {
+    return next(new ErrorResponse('Passwords do not match.', 400));
+  }
+
+  // Look for active record containing non-expired token
+  const user = await User.findOne({
+    where: {
+      reset_password_token: reset_token,
+      reset_password_expires: { [Op.gt]: Date.now() }
+    }
+  });
+
+  if (!user) {
+    return next(new ErrorResponse('The password reset token is invalid or has expired.', 400));
+  }
+
+  // Hash new text string choice
+  const salt = await bcrypt.genSalt(10);
+  user.password_hash = await bcrypt.hash(new_password, salt);
+  
+  // Wipe parameters completely
+  user.reset_password_token = null;
+  user.reset_password_expires = null;
+  await user.save();
+
+  logger.info(`Password updated successfully for account user ID: ${user.user_id}`);
+  return successResponse(res, null, 'Password reset successful.');
+});

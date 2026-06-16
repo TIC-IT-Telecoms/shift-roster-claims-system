@@ -37,6 +37,15 @@ export const User = sequelize.define(
       type: DataTypes.DATE,
       allowNull: true,
     },
+    // ===== PASSWORD RESET LIFECYCLE TRACKING FIELDS =====
+    reset_password_token: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    reset_password_expires: {
+      type: DataTypes.BIGINT,
+      allowNull: true,
+    },
   },
   {
     tableName: 'users',

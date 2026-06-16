@@ -154,3 +154,48 @@ export const sendClaimStatusUpdateEmail = async (employeeEmail, employeeName, st
     logger.error(`Failed to send status update notification to ${employeeEmail}: ${error.message}`);
   }
 };
+
+/**
+ * Dispatches a stylized HTML password reset link directly to the employee
+ * @param {string} toEmail - Destination address (username/email)
+ * @param {string} resetUrl - Complete frontend link containing the token parameter
+ */
+export const sendResetEmail = async (toEmail, resetUrl) => {
+  const mailOptions = {
+    from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
+    to: toEmail,
+    subject: 'Action Required: Reset Your Account Password',
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px;">
+        <h2 style="color: #1a73e8; text-align: center;">Password Reset Request</h2>
+        <p>We received a request to change the password for your Shift Roster System account. Click the button below to establish your new security credentials:</p>
+        
+        <div style="margin: 25px 0; text-align: center;">
+          <a href="${resetUrl}" target="_blank" style="background-color: #1a73e8; color: #ffffff; padding: 12px 24px; font-weight: bold; font-size: 14px; text-decoration: none; border-radius: 6px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            Reset Password
+          </a>
+        </div>
+        
+        <p style="font-size: 13px; color: #555;">
+          This secure authorization link is uniquely generated and will remain active for exactly <strong>1 hour</strong>.
+        </p>
+        <hr style="border: 0; border-top: 1px solid #e0e0e0; margin: 20px 0;" />
+        <p style="font-size: 12px; color: #777; word-break: break-all;">
+          If the button doesn't work, copy and paste this link into your web browser address bar:<br/>
+          <a href="${resetUrl}" style="color: #1a73e8;">${resetUrl}</a>
+        </p>
+      </div>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    logger.info(`Password reset link successfully emailed to: ${toEmail}`);
+  } catch (error) {
+    console.error("======= RAW SMTP RESET ERROR =======");
+    console.error(error);
+    console.error("====================================");
+    logger.error(`Failed to send password reset email to ${toEmail}: ${error.message}`);
+    throw new Error('Failed to deliver password reset email via SMTP service.');
+  }
+};
