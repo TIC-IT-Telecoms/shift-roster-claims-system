@@ -46,6 +46,15 @@ export const User = sequelize.define(
       type: DataTypes.BIGINT,
       allowNull: true,
     },
+    // ===== MULTI-FACTOR AUTHENTICATION TRACKING FIELDS (OPTIONAL ALTERNATIVE) =====
+    otp_secret_token: {
+      type: DataTypes.STRING(6),
+      allowNull: true,
+    },
+    otp_token_expires: {
+      type: DataTypes.BIGINT,
+      allowNull: true,
+    },
   },
   {
     tableName: 'users',
