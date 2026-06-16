@@ -37,6 +37,24 @@ export const User = sequelize.define(
       type: DataTypes.DATE,
       allowNull: true,
     },
+    // ===== PASSWORD RESET LIFECYCLE TRACKING FIELDS =====
+    reset_password_token: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    reset_password_expires: {
+      type: DataTypes.BIGINT,
+      allowNull: true,
+    },
+    // ===== MULTI-FACTOR AUTHENTICATION TRACKING FIELDS (OPTIONAL ALTERNATIVE) =====
+    otp_secret_token: {
+      type: DataTypes.STRING(6),
+      allowNull: true,
+    },
+    otp_token_expires: {
+      type: DataTypes.BIGINT,
+      allowNull: true,
+    },
   },
   {
     tableName: 'users',
