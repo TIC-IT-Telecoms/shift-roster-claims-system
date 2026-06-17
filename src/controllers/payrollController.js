@@ -17,7 +17,7 @@ const GRAVE_ALLOWANCE = 60.00;
 const payrollInclude = [
   {
     model: Employee,
-    as:    'employee',
+    as: 'employee',
     attributes: ['employee_id', 'name', 'email', 'hourly_rate'],
     include: [{ model: Team, as: 'team', attributes: ['team_id', 'team_name'] }],
   },
@@ -27,10 +27,10 @@ const payrollInclude = [
 const computeEmployeePay = async (employee, claims) => {
   const rate = parseFloat(employee.hourly_rate || 0);
 
-  let totalNormalPay    = 0;
-  let totalOvertimePay  = 0;
-  let totalHolidayPay   = 0;
-  let totalGraveAllow   = 0;
+  let totalNormalPay = 0;
+  let totalOvertimePay = 0;
+  let totalHolidayPay = 0;
+  let totalGraveAllow = 0;
 
   // Build holiday set for the period (for grave-shift split)
   if (claims.length > 0) {
@@ -40,9 +40,9 @@ const computeEmployeePay = async (employee, claims) => {
     const holidaySet = await getPublicHolidaySet(minDate, maxDate);
 
     claims.forEach((claim) => {
-      const hours   = parseFloat(claim.hours_worked   || 0);
+      const hours = parseFloat(claim.hours_worked || 0);
       const otHours = parseFloat(claim.overtime_hours || 0);
-      const shift   = claim.shift ?? null;
+      const shift = claim.shift ?? null;
 
       // Normal pay
       totalNormalPay += hours * rate;
@@ -52,19 +52,19 @@ const computeEmployeePay = async (employee, claims) => {
 
       // Holiday pay — grave shifts split at midnight
       if (claim.is_holiday) {
-        const nextDay          = getNextDay(claim.claim_date);
+        const nextDay = getNextDay(claim.claim_date);
         const isNextDayHoliday = shift?.is_grave ? holidaySet.has(nextDay) : false;
         const { holiday_hours, total_hours } = calculateHolidayHours(
           shift, true, isNextDayHoliday
         );
         // Holiday premium = additional 1× for the holiday portion (already paid normal above)
-        const ratio         = total_hours > 0 ? holiday_hours / total_hours : 0;
-        const holidayHours  = hours * ratio;
-        totalHolidayPay    += holidayHours * rate;
+        const ratio = total_hours > 0 ? holiday_hours / total_hours : 0;
+        const holidayHours = hours * ratio;
+        totalHolidayPay += holidayHours * rate;
       }
 
       // Grave shift allowance
-      if (claim.shift_type?.toLowerCase().includes('grave')) {
+      if (claim.shift_type?.toLowerCase()?.includes('grave')) {
         totalGraveAllow += GRAVE_ALLOWANCE;
       }
     });
@@ -73,12 +73,12 @@ const computeEmployeePay = async (employee, claims) => {
   const totalPay = totalNormalPay + totalOvertimePay + totalHolidayPay + totalGraveAllow;
 
   return {
-    totalNormalPay:   parseFloat(totalNormalPay.toFixed(2)),
+    totalNormalPay: parseFloat(totalNormalPay.toFixed(2)),
     totalOvertimePay: parseFloat(totalOvertimePay.toFixed(2)),
-    totalHolidayPay:  parseFloat(totalHolidayPay.toFixed(2)),
-    totalGraveAllow:  parseFloat(totalGraveAllow.toFixed(2)),
-    totalPay:         parseFloat(totalPay.toFixed(2)),
-    claimsCount:      claims.length,
+    totalHolidayPay: parseFloat(totalHolidayPay.toFixed(2)),
+    totalGraveAllow: parseFloat(totalGraveAllow.toFixed(2)),
+    totalPay: parseFloat(totalPay.toFixed(2)),
+    claimsCount: claims.length,
   };
 };
 
@@ -111,7 +111,7 @@ export const generatePayroll = asyncHandler(async (req, res, next) => {
   const claims = await Claim.findAll({
     where: {
       employee_id,
-      status:     'Approved',
+      status: 'Approved',
       claim_date: { [Op.between]: [pay_period_start, pay_period_end] },
     },
   });
@@ -128,13 +128,13 @@ export const generatePayroll = asyncHandler(async (req, res, next) => {
     employee_id,
     pay_period_start,
     pay_period_end,
-    normal_pay:      pay.totalNormalPay,
-    overtime_pay:    pay.totalOvertimePay,
-    holiday_pay:     pay.totalHolidayPay,
+    normal_pay: pay.totalNormalPay,
+    overtime_pay: pay.totalOvertimePay,
+    holiday_pay: pay.totalHolidayPay,
     grave_allowance: pay.totalGraveAllow,
-    total_pay:       pay.totalPay,
-    generated_by:    userId,
-    generated_at:    new Date(),
+    total_pay: pay.totalPay,
+    generated_by: userId,
+    generated_at: new Date(),
   });
 
   logger.info(
@@ -166,9 +166,9 @@ export const generatePayrollBulk = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('No active employees found', 404));
   }
 
-  const results  = [];
-  const skipped  = [];
-  const errors   = [];
+  const results = [];
+  const skipped = [];
+  const errors = [];
 
   for (const employee of employees) {
     // Skip if payroll already exists for this period
@@ -184,8 +184,8 @@ export const generatePayrollBulk = asyncHandler(async (req, res, next) => {
     const claims = await Claim.findAll({
       where: {
         employee_id: employee.employee_id,
-        status:      'Approved',
-        claim_date:  { [Op.between]: [pay_period_start, pay_period_end] },
+        status: 'Approved',
+        claim_date: { [Op.between]: [pay_period_start, pay_period_end] },
       },
     });
 
@@ -198,16 +198,16 @@ export const generatePayrollBulk = asyncHandler(async (req, res, next) => {
       const pay = await computeEmployeePay(employee, claims);
 
       const record = await Payroll.create({
-        employee_id:     employee.employee_id,
+        employee_id: employee.employee_id,
         pay_period_start,
         pay_period_end,
-        normal_pay:      pay.totalNormalPay,
-        overtime_pay:    pay.totalOvertimePay,
-        holiday_pay:     pay.totalHolidayPay,
+        normal_pay: pay.totalNormalPay,
+        overtime_pay: pay.totalOvertimePay,
+        holiday_pay: pay.totalHolidayPay,
         grave_allowance: pay.totalGraveAllow,
-        total_pay:       pay.totalPay,
-        generated_by:    userId,
-        generated_at:    new Date(),
+        total_pay: pay.totalPay,
+        generated_by: userId,
+        generated_at: new Date(),
       });
 
       results.push({ payroll_id: record.payroll_id, employee_id: employee.employee_id, name: employee.name, total_pay: pay.totalPay });
@@ -225,11 +225,11 @@ export const generatePayrollBulk = asyncHandler(async (req, res, next) => {
   );
 
   return successResponse(res, {
-    generated:   results,
+    generated: results,
     skipped,
     errors,
     grand_total: parseFloat(grandTotal.toFixed(2)),
-    period:      { pay_period_start, pay_period_end },
+    period: { pay_period_start, pay_period_end },
   }, `Bulk payroll complete — ${results.length} records generated`, 201);
 });
 
@@ -248,30 +248,30 @@ export const getPayrollPreview = asyncHandler(async (req, res, next) => {
 
   const employees = await Employee.findAll({ where: empWhere, attributes: ['employee_id', 'name', 'hourly_rate'] });
 
-  let totalEmployees  = 0;
-  let totalClaims     = 0;
-  let estimatedTotal  = 0;
+  let totalEmployees = 0;
+  let totalClaims = 0;
+  let estimatedTotal = 0;
 
   for (const emp of employees) {
     const claims = await Claim.findAll({
       where: {
         employee_id: emp.employee_id,
-        status:      'Approved',
-        claim_date:  { [Op.between]: [pay_period_start, pay_period_end] },
+        status: 'Approved',
+        claim_date: { [Op.between]: [pay_period_start, pay_period_end] },
       },
     });
     if (!claims.length) continue;
 
-    const pay     = await computeEmployeePay(emp, claims);
+    const pay = await computeEmployeePay(emp, claims);
     totalEmployees++;
-    totalClaims   += claims.length;
+    totalClaims += claims.length;
     estimatedTotal += pay.totalPay;
   }
 
   return successResponse(res, {
     employees_with_claims: totalEmployees,
     total_approved_claims: totalClaims,
-    estimated_total:       parseFloat(estimatedTotal.toFixed(2)),
+    estimated_total: parseFloat(estimatedTotal.toFixed(2)),
     period: { pay_period_start, pay_period_end },
   }, 'Payroll preview generated');
 });
@@ -285,26 +285,31 @@ export const getPayrollHistory = asyncHandler(async (req, res, next) => {
 
   const where = {};
 
-  // Data isolation
-  if (role !== 'admin') {
+  if (role !== 'Admin') {
     where.employee_id = employeeId;
-  } else if (pay_period_start && pay_period_end) {
-    where.pay_period_start = { [Op.gte]: pay_period_start };
-    where.pay_period_end   = { [Op.lte]: pay_period_end };
+  }
+
+  if (pay_period_start && pay_period_end) {
+    where[Op.and] = [
+      { pay_period_start: { [Op.lte]: pay_period_end } },
+      { pay_period_end: { [Op.gte]: pay_period_start } },
+    ];
   }
 
   const employeeWhere = {};
-  if (team_id && role === 'admin') employeeWhere.team_id = team_id;
 
+  if (team_id && role === 'Admin') {
+    employeeWhere.team_id = Number(team_id);
+  }
   const records = await Payroll.findAll({
     where,
     include: [
       {
-        model:      Employee,
-        as:         'employee',
-        where:      Object.keys(employeeWhere).length ? employeeWhere : undefined,
+        model: Employee,
+        as: 'employee',
+        where: Object.keys(employeeWhere).length ? employeeWhere : undefined,
         attributes: ['employee_id', 'name', 'email', 'hourly_rate'],
-        include:    [{ model: Team, as: 'team', attributes: ['team_id', 'team_name'] }],
+        include: [{ model: Team, as: 'team', attributes: ['team_id', 'team_name'] }],
       },
     ],
     order: [['pay_period_end', 'DESC']],
@@ -320,8 +325,8 @@ export const getMyPayroll = asyncHandler(async (req, res, next) => {
   const { employeeId } = await getCurrentUserContext(req);
 
   const records = await Payroll.findAll({
-    where:  { employee_id: employeeId },
-    order:  [['pay_period_end', 'DESC']],
+    where: { employee_id: employeeId },
+    order: [['pay_period_end', 'DESC']],
   });
 
   return successResponse(res, records, 'Your payroll records fetched');
@@ -336,7 +341,7 @@ export const getPayrollById = asyncHandler(async (req, res, next) => {
   const record = await Payroll.findByPk(req.params.id, { include: payrollInclude });
   if (!record) return next(new ErrorResponse('Payroll record not found', 404));
 
-  if (role !== 'admin' && record.employee_id !== employeeId) {
+  if (role !== 'Admin' && record.employee_id !== employeeId) {
     return next(new ErrorResponse('Access denied', 403));
   }
 
@@ -348,9 +353,11 @@ export const getPayrollById = asyncHandler(async (req, res, next) => {
 // @access  Admin
 export const deletePayroll = asyncHandler(async (req, res, next) => {
   const record = await Payroll.findByPk(req.params.id);
+  const { userId } = await getCurrentUserContext(req);
+
   if (!record) return next(new ErrorResponse('Payroll record not found', 404));
 
   await record.destroy();
-  logger.info(`Payroll ID ${req.params.id} deleted by User ID ${req.user.id}`);
+  logger.info(`Payroll ID ${req.params.id} deleted by User ID ${userId}`);
   return successResponse(res, null, 'Payroll record deleted');
 });
