@@ -16,6 +16,11 @@ pnpm-debug.log*
 .env.production
 .env.production.local
 
+#Docker files
+Dockerfile
+.dockerignore
+docker-compose.yml
+
 # Build output
 dist/
 build/
