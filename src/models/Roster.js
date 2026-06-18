@@ -1,4 +1,3 @@
-// models/Roster.js
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/database.js';
 
@@ -17,7 +16,7 @@ export const Roster = sequelize.define(
     },
     shift_id: {
       type: DataTypes.INTEGER,
-      allowNull: true, // null = Off day
+      allowNull: true,
       references: { model: 'shifts', key: 'shift_id' },
     },
     roster_date: {
@@ -42,7 +41,6 @@ export const Roster = sequelize.define(
     timestamps: false,
     indexes: [
       {
-        // One roster entry per employee per date
         unique: true,
         fields: ['employee_id', 'roster_date'],
         name: 'uq_employee_roster_date',

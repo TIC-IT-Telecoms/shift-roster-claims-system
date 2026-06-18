@@ -34,11 +34,7 @@ export const getEmployeeById = asyncHandler(async (req, res, next) => {
     include: [
       { model: Team, as: 'team', attributes: ['team_id', 'team_name'] },
       { model: User, as: 'user', attributes: ['user_id', 'username', 'role'] },
-      {
-        model: Employee,
-        as: 'supervisor',
-        attributes: ['employee_id', 'name', 'role'],
-      },
+      { model: Employee, as: 'supervisor', attributes: ['employee_id', 'name', 'role'] },
     ],
   });
 
@@ -48,13 +44,14 @@ export const getEmployeeById = asyncHandler(async (req, res, next) => {
 
   return successResponse(res, employee, 'Employee fetched successfully');
 });
+
 // @desc    Create employee + user account
 // @route   POST /api/employees
 // @access  Admin
 export const createEmployee = asyncHandler(async (req, res, next) => {
   const {
     name, email, phone, team_id, hourly_rate, role, password,
-    employment_type, id_number, address, join_date, supervisor_id,
+    employment_type, id_number, address, supervisor_id,
   } = req.body;
 
   if (!name || !email || !password) {
@@ -103,7 +100,6 @@ export const createEmployee = asyncHandler(async (req, res, next) => {
         employment_type: employment_type || 'Full Time',
         id_number: id_number || null,
         address: address || null,
-        join_date: join_date || null,
         supervisor_id: supervisor_id || null,
       },
       { transaction: t }
@@ -145,7 +141,7 @@ export const updateEmployee = asyncHandler(async (req, res, next) => {
 
   const {
     name, email, phone, team_id, hourly_rate, role,
-    employment_type, id_number, address, join_date, supervisor_id,
+    employment_type, id_number, address, supervisor_id,
   } = req.body;
 
   if (team_id) {
@@ -192,7 +188,6 @@ export const updateEmployee = asyncHandler(async (req, res, next) => {
         employment_type: employment_type ?? employee.employment_type,
         id_number: id_number !== undefined ? id_number : employee.id_number,
         address: address !== undefined ? address : employee.address,
-        join_date: join_date ?? employee.join_date,
         supervisor_id: supervisor_id !== undefined ? supervisor_id : employee.supervisor_id,
       },
       { transaction: t }

@@ -119,9 +119,15 @@ export const verifyOtp = asyncHandler(async (req, res, next) => {
   const token = generateToken({ id: cachedRecord.userId, role: cachedRecord.role });
   res.cookie('token', token, COOKIE_OPTIONS);
 
+    await User.update(
+    { last_login: new Date() },
+    { where: { user_id: cachedRecord.userId } }
+  );
+  
   // Clear cache record immediately to prevent replay attacks
   otpCache.delete(normalizedUsername);
   logger.info(`MFA validated successfully. ${cachedRecord.role} ID ${cachedRecord.userId} authorized.`);
+
 
   // ALIGNED: Returns structural data expected by useVerifyOtp hook inside useAuth.js
   return successResponse(

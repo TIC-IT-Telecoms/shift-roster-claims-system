@@ -10,3 +10,4 @@ export { Approval } from './Approval.js';
 export { Payroll } from './Payroll.js';
 export { PublicHoliday } from './PublicHoliday.js';
 export { ComplianceFlag } from './ComplianceFlag.js';
+export { Notification } from './Notification.js';

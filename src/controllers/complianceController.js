@@ -1,193 +1,285 @@
-import { ComplianceFlag } from '../models/ComplianceFlag.js';
-import { Claim } from '../models/Claim.js';
-import { Employee } from '../models/Employee.js';
+import { Op } from 'sequelize';
+import { ComplianceFlag, Claim, Employee, Team } from '../models/index.js';
+import { getCurrentUserContext } from '../utils/authHelpers.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { successResponse } from '../utils/apiResponse.js';
 import { ErrorResponse } from '../utils/ErrorResponse.js';
 import { logger } from '../utils/logger.js';
-import { Op } from 'sequelize';
 
-// Helper function to get the Monday (Week Start) of a given date string
-const getWeekStartDate = (dateStr) => {
-  const d = new Date(dateStr);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when Sunday is 0
-  const monday = new Date(d.setDate(diff));
-  return monday.toISOString().split('T')[0];
+// ===== Shared include =====
+const flagInclude = [{
+  model:      Employee,
+  as:         'employee',
+  attributes: ['employee_id', 'name', 'email'],
+  include:    [{ model: Team, as: 'team', attributes: ['team_id', 'team_name'] }],
+}];
+
+// ===== Core rules engine — runs against one employee's claims =====
+const evaluateClaims = async (employeeId, claims) => {
+  const generated = [];
+  let cumulativeNormal   = 0;
+  let cumulativeOvertime = 0;
+  let prev = null;
+
+  const upsertFlag = async (data) => {
+    const [flag, created] = await ComplianceFlag.findOrCreate({
+      where: {
+        employee_id:   employeeId,
+        flag_date:     data.flag_date,
+        rule_violated: data.rule_violated,
+      },
+      defaults: { ...data, resolved: false },
+    });
+    if (created) generated.push(flag);
+    return { flag, created };
+  };
+
+  for (const claim of claims) {
+    const hours   = parseFloat(claim.hours_worked   || 0);
+    const otHours = parseFloat(claim.overtime_hours || 0);
+
+    cumulativeNormal   += hours;
+    cumulativeOvertime += otHours;
+
+    // Rule A — Daily overtime cap (BCEA: max 3h OT per day)
+    if (otHours > 3) {
+      await upsertFlag({
+        employee_id:   employeeId,
+        flag_date:     claim.claim_date,
+        rule_violated: 'Daily Overtime Cap Exceeded',
+        description:   `Overtime hours (${otHours}h) on ${claim.claim_date} exceed the BCEA daily cap of 3 hours.`,
+        severity:      'High',
+      });
+    }
+
+    // Rule B — Meal interval (BCEA: break required when shift > 5h continuous)
+    if (hours > 5) {
+      await upsertFlag({
+        employee_id:   employeeId,
+        flag_date:     claim.claim_date,
+        rule_violated: 'Meal Interval Required',
+        description:   `Shift of ${hours}h on ${claim.claim_date} exceeds 5 continuous hours. A meal break must be recorded.`,
+        severity:      'Low',
+      });
+    }
+
+    // Rule C — Short daily rest (BCEA: 12h minimum rest between shifts)
+    if (prev) {
+      const prevDate    = new Date(prev.claim_date);
+      const currDate    = new Date(claim.claim_date);
+      const daysBetween = (currDate - prevDate) / 86_400_000;
+
+      const nightToEarlyTurnaround =
+        daysBetween === 1 &&
+        (prev.shift_type === 'Night Shift' || prev.shift_type === 'Grave Shift') &&
+        claim.shift_type === 'Early Shift';
+
+      if (nightToEarlyTurnaround) {
+        await upsertFlag({
+          employee_id:   employeeId,
+          flag_date:     claim.claim_date,
+          rule_violated: 'Short Daily Rest Period',
+          description:   `Back-to-back ${prev.shift_type} → ${claim.shift_type} rotation on ${claim.claim_date} may breach the BCEA 12-hour minimum rest requirement.`,
+          severity:      'Medium',
+        });
+      }
+    }
+
+    prev = claim;
+  }
+
+  // Rule D — Weekly ordinary hours (BCEA: max 45h/week)
+  if (cumulativeNormal > 45) {
+    await upsertFlag({
+      employee_id:   employeeId,
+      flag_date:     claims.at(-1).claim_date,
+      rule_violated: 'Weekly Ordinary Hours Limit Exceeded',
+      description:   `Accumulated ordinary hours (${cumulativeNormal}h) exceed the BCEA statutory cap of 45 hours per week.`,
+      severity:      'High',
+    });
+  }
+
+  // Rule E — Weekly overtime limit (BCEA: max 10h OT/week)
+  if (cumulativeOvertime > 10) {
+    await upsertFlag({
+      employee_id:   employeeId,
+      flag_date:     claims.at(-1).claim_date,
+      rule_violated: 'Weekly Overtime Limit Exceeded',
+      description:   `Accumulated overtime hours (${cumulativeOvertime}h) exceed the BCEA legal cap of 10 hours per week.`,
+      severity:      'High',
+    });
+  }
+
+  return generated;
 };
 
-// @desc    Run compliance validation engine on an employee's claims for a given week/date range
+// @desc    Run compliance check for a single employee
 // @route   POST /api/compliance/check
-// @access  Private (Admin Only)
+// @access  Admin
 export const checkCompliance = asyncHandler(async (req, res, next) => {
   const { employee_id, start_date, end_date } = req.body;
 
   if (!employee_id || !start_date || !end_date) {
-    return next(new ErrorResponse('Please provide employee_id, start_date, and end_date', 400));
+    return next(new ErrorResponse('employee_id, start_date and end_date are required', 400));
   }
 
-  // 1. Fetch all claims submitted by the employee in this date range
+  const employee = await Employee.findByPk(employee_id);
+  if (!employee) return next(new ErrorResponse('Employee not found', 404));
+
   const claims = await Claim.findAll({
     where: {
       employee_id,
-      claim_date: {
-        [Op.between]: [start_date, end_date]
-      }
+      claim_date: { [Op.between]: [start_date, end_date] },
     },
-    order: [['claim_date', 'ASC']]
+    order: [['claim_date', 'ASC']],
   });
 
-  if (claims.length === 0) {
-    return successResponse(res, [], 'No claims found to evaluate compliance for this timeframe');
+  if (!claims.length) {
+    return successResponse(res, [], 'No claims found for this employee in the selected period.');
   }
 
-  const generatedFlags = [];
-  let cumulativeNormalHours = 0;
-  let cumulativeOvertimeHours = 0;
-  let previousClaim = null;
+  const generated = await evaluateClaims(employee_id, claims);
 
-  // 2. Loop through claims to evaluate Daily BCEA Rules
-  for (const claim of claims) {
-    const normalHours = parseFloat(claim.hours_worked || 0);
-    const otHours = parseFloat(claim.overtime_hours || 0);
-    
-    cumulativeNormalHours += normalHours;
-    cumulativeOvertimeHours += otHours;
+  logger.info(
+    `Compliance check: Employee ID ${employee_id} | ` +
+    `${start_date} → ${end_date} | ${generated.length} new flags`
+  );
 
-    // Rule A: Meal Interval Flag (Spreadsheet Rule: Shift above 5 hours requires a break)
-    if (normalHours > 5) {
-      const ruleName = 'Meal Interval Required';
-      const flagExists = await ComplianceFlag.findOne({
-        where: { employee_id, flag_date: claim.claim_date, rule_violated: ruleName }
-      });
-
-      if (!flagExists) {
-        const flag = await ComplianceFlag.create({
-          employee_id,
-          flag_date: claim.claim_date,
-          rule_violated: ruleName,
-          description: `Shift hours (${normalHours} hrs) exceed the continuous 5-hour limit without a logged meal break.`,
-          severity: 'Low',
-          resolved: false
-        });
-        generatedFlags.push(flag);
-      }
-    }
-
-    // Rule B: Daily Rest Minimum (Spreadsheet Rule: Minimum 12 consecutive hours of rest between shifts)
-    if (previousClaim) {
-      const prevDate = new Date(previousClaim.claim_date);
-      const currDate = new Date(claim.claim_date);
-      const daysBetween = (currDate - prevDate) / (1000 * 60 * 60 * 24);
-
-      // Flag if shifts are on back-to-back days and it was a Night-to-Day/Evening turnaround
-      if (daysBetween === 1 && previousClaim.shift_type === 'Night' && (claim.shift_type === 'Day' || claim.shift_type === 'Evening')) {
-        const ruleName = 'Short Daily Rest Period';
-        const flagExists = await ComplianceFlag.findOne({
-          where: { employee_id, flag_date: claim.claim_date, rule_violated: ruleName }
-        });
-
-        if (!flagExists) {
-          const flag = await ComplianceFlag.create({
-            employee_id,
-            flag_date: claim.claim_date,
-            rule_violated: ruleName,
-            description: `Back-to-back shift rotation (${previousClaim.shift_type} to ${claim.shift_type}) breaks the BCEA 12-hour minimum daily rest rule.`,
-            severity: 'Medium',
-            resolved: false
-          });
-          generatedFlags.push(flag);
-        }
-      }
-    }
-    previousClaim = claim;
-  }
-
-  // Rule C: Weekly Ordinary Hours Limit Check (Spreadsheet Rule: Capped at 45 ordinary hours per week)
-  if (cumulativeNormalHours > 45) {
-    const ruleName = 'BCEA Weekly Ordinary Hours Limit Exceeded';
-    const flagExists = await ComplianceFlag.findOne({
-      where: { employee_id, flag_date: end_date, rule_violated: ruleName }
-    });
-
-    if (!flagExists) {
-      const flag = await ComplianceFlag.create({
-        employee_id,
-        flag_date: end_date,
-        rule_violated: ruleName,
-        description: `Weekly accumulated ordinary hours reached ${cumulativeNormalHours} hrs, exceeding the statutory 45-hour limit.`,
-        severity: 'High',
-        resolved: false
-      });
-      generatedFlags.push(flag);
-    }
-  }
-
-  // Rule D: Weekly Overtime Hours Limit Check (Spreadsheet Rule: Capped at 10 overtime hours per week)
-  if (cumulativeOvertimeHours > 10) {
-    const ruleName = 'BCEA Weekly Overtime Limit Exceeded';
-    const flagExists = await ComplianceFlag.findOne({
-      where: { employee_id, flag_date: end_date, rule_violated: ruleName }
-    });
-
-    if (!flagExists) {
-      const flag = await ComplianceFlag.create({
-        employee_id,
-        flag_date: end_date,
-        rule_violated: ruleName,
-        description: `Weekly accumulated overtime hours reached ${cumulativeOvertimeHours} hrs, exceeding the legal 10-hour cap.`,
-        severity: 'High',
-        resolved: false
-      });
-      generatedFlags.push(flag);
-    }
-  }
-
-  logger.info(`Compliance validation engine executed for employee ID ${employee_id}. Generated ${generatedFlags.length} flags.`);
-  return successResponse(res, generatedFlags, 'Compliance validation processing complete');
+  return successResponse(
+    res,
+    generated,
+    `Check complete — ${generated.length} new flag${generated.length !== 1 ? 's' : ''} generated.`
+  );
 });
 
-// @desc    Get compliance flags (Admin sees organization exceptions, Employee sees personal alerts)
-// @route   GET /api/compliance
-// @access  Private (Admin & Employee)
-export const getComplianceFlags = asyncHandler(async (req, res, next) => {
-  const { resolved } = req.query;
-  const whereClause = {};
+// @desc    Run compliance check for ALL active employees in a period
+// @route   POST /api/compliance/check-all
+// @access  Admin
+export const checkComplianceAll = asyncHandler(async (req, res, next) => {
+  const { start_date, end_date, team_id } = req.body;
 
-  if (resolved !== undefined) {
-    whereClause.resolved = resolved === 'true';
+  if (!start_date || !end_date) {
+    return next(new ErrorResponse('start_date and end_date are required', 400));
   }
 
-  // Data Isolation: If user is an Employee, restrict them to looking at their own compliance records
-  if (req.user.role !== 'Admin') {
-    whereClause.employee_id = req.user.id;
+  const empWhere = { status: 'Active' };
+  if (team_id) empWhere.team_id = team_id;
+
+  const employees = await Employee.findAll({ where: empWhere, attributes: ['employee_id', 'name'] });
+  if (!employees.length) return next(new ErrorResponse('No active employees found', 404));
+
+  let totalFlags  = 0;
+  let checkedEmp  = 0;
+
+  for (const emp of employees) {
+    const claims = await Claim.findAll({
+      where: {
+        employee_id: emp.employee_id,
+        claim_date:  { [Op.between]: [start_date, end_date] },
+      },
+      order: [['claim_date', 'ASC']],
+    });
+    if (!claims.length) continue;
+
+    const flags = await evaluateClaims(emp.employee_id, claims);
+    totalFlags += flags.length;
+    checkedEmp++;
+  }
+
+  logger.info(
+    `Bulk compliance check: ${start_date} → ${end_date} | ` +
+    `${checkedEmp} employees checked | ${totalFlags} new flags`
+  );
+
+  return successResponse(
+    res,
+    { employees_checked: checkedEmp, flags_generated: totalFlags },
+    `Bulk check complete — ${totalFlags} new flag${totalFlags !== 1 ? 's' : ''} across ${checkedEmp} employees.`
+  );
+});
+
+// @desc    Get compliance flags (admin = all, employee = own)
+// @route   GET /api/compliance
+// @access  Private
+export const getComplianceFlags = asyncHandler(async (req, res, next) => {
+  const { employeeId, role } = await getCurrentUserContext(req);
+  const { resolved, severity, employee_id, start_date, end_date } = req.query;
+
+  const where = {};
+
+  if (role !== 'admin') {
+    where.employee_id = employeeId;
+  } else if (employee_id) {
+    where.employee_id = employee_id;
+  }
+
+  if (resolved !== undefined) where.resolved = resolved === 'true';
+  if (severity)               where.severity = severity;
+
+  if (start_date && end_date) {
+    where.flag_date = { [Op.between]: [start_date, end_date] };
   }
 
   const flags = await ComplianceFlag.findAll({
-    where: whereClause,
-    include: [{
-      model: Employee,
-      as: 'employee',
-      attributes: ['employee_id', 'name', 'email']
-    }],
-    order: [['flag_date', 'DESC']]
+    where,
+    include: flagInclude,
+    order:   [['flag_date', 'DESC']],
   });
 
-  return successResponse(res, flags, 'Compliance data history fetched successfully');
+  return successResponse(res, flags, 'Compliance flags fetched');
 });
 
-// @desc    Resolve / Dismiss an exception flag with manager override
-// @route   PATCH /api/compliance/:id/resolve
-// @access  Private (Admin Only)
-export const resolveFlag = asyncHandler(async (req, res, next) => {
-  const flag = await ComplianceFlag.findByPk(req.params.id);
+// @desc    Get own compliance flags (employee)
+// @route   GET /api/compliance/me
+// @access  Private (employee)
+export const getMyComplianceFlags = asyncHandler(async (req, res, next) => {
+  const { employeeId } = await getCurrentUserContext(req);
+  const { resolved } = req.query;
 
-  if (!flag) {
-    return next(new ErrorResponse(`Compliance flag record not found with ID of ${req.params.id}`, 404));
+  const where = { employee_id: employeeId };
+  if (resolved !== undefined) where.resolved = resolved === 'true';
+
+  const flags = await ComplianceFlag.findAll({
+    where,
+    order: [['flag_date', 'DESC']],
+  });
+
+  return successResponse(res, flags, 'Your compliance flags fetched');
+});
+
+// @desc    Resolve a flag
+// @route   PATCH /api/compliance/:id/resolve
+// @access  Admin
+export const resolveFlag = asyncHandler(async (req, res, next) => {
+  const { notes } = req.body;
+  const { userId } = await getCurrentUserContext(req);
+
+  const flag = await ComplianceFlag.findByPk(req.params.id, { include: flagInclude });
+  if (!flag) return next(new ErrorResponse('Compliance flag not found', 404));
+
+  if (flag.resolved) {
+    return next(new ErrorResponse('This flag has already been resolved', 400));
   }
 
-  await flag.update({ resolved: true });
+  await flag.update({
+    resolved:     true,
+    resolved_at:  new Date(),
+    resolved_by:  userId,
+    resolve_notes: notes?.trim() || 'Resolved by admin override.',
+  });
 
-  logger.info(`Compliance exception ID ${req.params.id} marked resolved by Admin user ID ${req.user.id}`);
-  return successResponse(res, flag, 'Compliance flag marked as resolved successfully');
+  logger.info(`Compliance flag ID ${flag.compliance_id} resolved by User ID ${userId}`);
+  return successResponse(res, flag, 'Flag marked as resolved');
+});
+
+// @desc    Delete a compliance flag
+// @route   DELETE /api/compliance/:id
+// @access  Admin
+export const deleteFlag = asyncHandler(async (req, res, next) => {
+  const flag = await ComplianceFlag.findByPk(req.params.id);
+  if (!flag) return next(new ErrorResponse('Compliance flag not found', 404));
+
+  await flag.destroy();
+  logger.info(`Compliance flag ID ${req.params.id} deleted`);
+  return successResponse(res, null, 'Flag deleted');
 });
