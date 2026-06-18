@@ -1,18 +1,17 @@
-import { Claim } from '../models/Claim.js';
-import { Employee } from '../models/Employee.js'; 
-import { Approval } from '../models/Approval.js';
-import { User } from '../models/User.js';
+import { Employee, User, Claim, Approval, Team } from '../models/index.js';
+import { getCurrentUserContext } from '../utils/authHelpers.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { successResponse } from '../utils/apiResponse.js';
 import { ErrorResponse } from '../utils/ErrorResponse.js';
 import { logger } from '../utils/logger.js';
 
 // Import our newly created email notification utilities
-import { 
-  sendEmployeeClaimSubmissionEmail, 
-  sendAdminNewClaimAlertEmail, 
-  sendClaimStatusUpdateEmail 
+import {
+  sendEmployeeClaimSubmissionEmail,
+  sendAdminNewClaimAlertEmail,
+  sendClaimStatusUpdateEmail
 } from '../utils/emailService.js';
+import { where } from 'sequelize';
 
 // @desc    Create a new claim
 // @route   POST /api/claims
@@ -23,12 +22,10 @@ export const createClaim = asyncHandler(async (req, res, next) => {
   if (!claim_date || !shift_type) {
     return next(new ErrorResponse('Please provide claim_date and shift_type', 400));
   }
-
-  // Self-Assign Ownership: Uses the user id embedded in the JWT payload by authController
-  const userId = req.user.user_id || req.user.id;
+  const { employeeId } = await getCurrentUserContext(req);
 
   const claim = await Claim.create({
-    employee_id: userId,
+    employee_id: employeeId,
     claim_date,
     shift_type,
     hours_worked: hours_worked || 0,
@@ -37,25 +34,25 @@ export const createClaim = asyncHandler(async (req, res, next) => {
     status: 'Pending'
   });
 
-  logger.info(`Claim ID ${claim.claim_id} created successfully by employee ID: ${userId}`);
+  logger.info(`Claim ID ${claim.claim_id} created successfully by employee ID: ${employeeId}`);
 
   // ─── EMAIL NOTIFICATION ENGINE (SUBMISSION) ────────────────────────────────
   // Fetch the current employee's profile information to extract email details safely
-  const currentEmployee = await Employee.findByPk(userId);
-  
-  if (currentEmployee) {
-    // 1. Dispatch confirmation receipt back to the employee
-    sendEmployeeClaimSubmissionEmail(currentEmployee.email, currentEmployee.name, claim);
+  // const currentEmployee = await Employee.findByPk({ where: { employee_id: employeeId } });
 
-    // 2. Locate active Administrators to ping them about the incoming review action
-    User.findAll({ where: { role: 'Admin' } })
-      .then((administrators) => {
-        administrators.forEach((admin) => {
-          sendAdminNewClaimAlertEmail(admin.username, currentEmployee.name, claim);
-        });
-      })
-      .catch((err) => logger.error(`Admin review email distribution error: ${err.message}`));
-  }
+  // if (currentEmployee) {
+  //   // 1. Dispatch confirmation receipt back to the employee
+  //   sendEmployeeClaimSubmissionEmail(currentEmployee.email, currentEmployee.name, claim);
+
+  //   // 2. Locate active Administrators to ping them about the incoming review action
+  //   User.findAll({ where: { role: 'Admin' } })
+  //     .then((administrators) => {
+  //       administrators.forEach((admin) => {
+  //         sendAdminNewClaimAlertEmail(admin.username, currentEmployee.name, claim);
+  //       });
+  //     })
+  //     .catch((err) => logger.error(`Admin review email distribution error: ${err.message}`));
+  // }
   // ────────────────────────────────────────────────────────────────────────────
 
   return successResponse(res, claim, 'Claim submitted successfully', 201);
@@ -67,22 +64,29 @@ export const createClaim = asyncHandler(async (req, res, next) => {
 export const getAllClaims = asyncHandler(async (req, res, next) => {
   const { status } = req.query;
   const whereClause = {};
-  const userId = req.user.user_id || req.user.id;
+  const { employeeId, role } = await getCurrentUserContext(req);
 
   if (status) whereClause.status = status;
 
   // Data Isolation Guard: If the caller isn't an Admin, filter the query by their employee_id
-  if (req.user.role !== 'Admin') {
-    whereClause.employee_id = userId;
+  if (role !== 'Admin') {
+    whereClause.employee_id = employeeId;
   }
 
-  const claims = await Claim.findAll({ 
+  const claims = await Claim.findAll({
     where: whereClause,
     include: [
       {
         model: Employee,
         as: 'employee',
-        attributes: ['employee_id', 'name', 'email'] // Uses 'name' to match your database schema
+        attributes: ['employee_id', 'name', 'email', 'hourly_rate'], // Uses 'name' to match your database schema
+        include: [
+          {
+            model: Team,
+            as: 'team',
+            attributes: ['team_name']
+          }
+        ]
       },
       {
         model: Approval,
@@ -92,7 +96,7 @@ export const getAllClaims = asyncHandler(async (req, res, next) => {
     ],
     order: [['claim_date', 'DESC']]
   });
-  
+
   return successResponse(res, claims, 'Claims retrieved successfully');
 });
 
@@ -100,8 +104,8 @@ export const getAllClaims = asyncHandler(async (req, res, next) => {
 // @route   GET /api/claims/:id
 // @access  Private (Admin or Owner Employee)
 export const getClaimById = asyncHandler(async (req, res, next) => {
-  const userId = req.user.user_id || req.user.id;
-  
+  const { employeeId, role } = await getCurrentUserContext(req);
+
   const claim = await Claim.findByPk(req.params.id, {
     include: [
       {
@@ -121,7 +125,7 @@ export const getClaimById = asyncHandler(async (req, res, next) => {
   }
 
   // Cross-Viewing Protection: Block employees from peeking at rows belonging to others
-  if (req.user.role !== 'Admin' && claim.employee_id !== userId) {
+  if (role !== 'Admin' && claim.employee_id !== employeeId) {
     return next(new ErrorResponse('Access denied: You can only view your own claims', 403));
   }
 
@@ -132,7 +136,8 @@ export const getClaimById = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/claims/:id
 // @access  Private (Employee Only)
 export const updateClaim = asyncHandler(async (req, res, next) => {
-  const userId = req.user.user_id || req.user.id;
+  const { employeeId } = await getCurrentUserContext(req);
+
   const claim = await Claim.findByPk(req.params.id);
 
   if (!claim) {
@@ -140,7 +145,7 @@ export const updateClaim = asyncHandler(async (req, res, next) => {
   }
 
   // Security Check: Enforce record ownership
-  if (claim.employee_id !== userId) {
+  if (claim.employee_id !== employeeId) {
     return next(new ErrorResponse('Access denied: You can only modify your own claims', 403));
   }
 
@@ -156,7 +161,7 @@ export const updateClaim = asyncHandler(async (req, res, next) => {
     fields: ['claim_date', 'shift_type', 'hours_worked', 'overtime_hours', 'is_holiday', 'updated_at']
   });
 
-  logger.info(`Claim ID ${claim.claim_id} modified by employee ID: ${userId}`);
+  logger.info(`Claim ID ${claim.claim_id} modified by employee ID: ${employeeId}`);
   return successResponse(res, updatedClaim, 'Claim updated successfully');
 });
 
@@ -165,7 +170,8 @@ export const updateClaim = asyncHandler(async (req, res, next) => {
 // @access  Private (Admin Only)
 export const reviewClaim = asyncHandler(async (req, res, next) => {
   const { status, notes, comments } = req.body;
-  const adminId = req.user.user_id || req.user.id;
+  const { employeeId } = await getCurrentUserContext(req);
+  const adminId = employeeId;
 
   if (!['Approved', 'Rejected'].includes(status)) {
     return next(new ErrorResponse('Please provide a valid status update (Approved or Rejected)', 400));
@@ -186,7 +192,7 @@ export const reviewClaim = asyncHandler(async (req, res, next) => {
     logger.warn(`Admin ID ${adminId} denied changing finalized Claim ID ${claim.claim_id} (Current Status: ${claim.status})`);
     return next(
       new ErrorResponse(
-        `Review denied: This claim has already been processed and is marked as "${claim.status}".`, 
+        `Review denied: This claim has already been processed and is marked as "${claim.status}".`,
         400
       )
     );
@@ -195,7 +201,7 @@ export const reviewClaim = asyncHandler(async (req, res, next) => {
   const finalizedNotes = notes || comments || `Claim processed to ${status.toLowerCase()}.`;
 
   // 1. Update parent claim record status
-  await claim.update({ 
+  await claim.update({
     status,
     updated_at: new Date()
   });
@@ -203,7 +209,7 @@ export const reviewClaim = asyncHandler(async (req, res, next) => {
   // 2. Insert audit footprint into approvals tracking table using explicit DB column attributes
   await Approval.create({
     claim_id: claim.claim_id,
-    approved_by: adminId, 
+    approved_by: adminId,
     status,
     notes: finalizedNotes,
     approved_at: new Date()
@@ -225,7 +231,8 @@ export const reviewClaim = asyncHandler(async (req, res, next) => {
 // @route   DELETE /api/claims/:id
 // @access  Private (Employee Only)
 export const deleteClaim = asyncHandler(async (req, res, next) => {
-  const userId = req.user.user_id || req.user.id;
+  const { employeeId } = await getCurrentUserContext(req);
+
   const claim = await Claim.findByPk(req.params.id);
 
   if (!claim) {
@@ -233,7 +240,7 @@ export const deleteClaim = asyncHandler(async (req, res, next) => {
   }
 
   // Security Check: Enforce record ownership
-  if (claim.employee_id !== userId) {
+  if (claim.employee_id !== employeeId) {
     return next(new ErrorResponse('Access denied: You can only delete your own claims', 403));
   }
 
@@ -244,6 +251,6 @@ export const deleteClaim = asyncHandler(async (req, res, next) => {
 
   await claim.destroy();
 
-  logger.info(`Claim ID ${req.params.id} permanently removed by employee ID: ${userId}`);
+  logger.info(`Claim ID ${req.params.id} permanently removed by employee ID: ${employeeId}`);
   return successResponse(res, null, 'Claim removed successfully');
 });

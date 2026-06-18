@@ -17,7 +17,7 @@ router.use(protect);
 // Standard collection pathways
 router.route('/')
   .post(authorizeRoles('Employee'), createClaim) // Only employees can submit fresh claims
-  .get(getAllClaims);                            // Admins see everything; Employees see only their own records
+  .get(getAllClaims);                        // Admins see everything; Employees see only their own records
 
 // Individual claim pathways
 router.route('/:id')
