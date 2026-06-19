@@ -1,21 +1,29 @@
 import nodemailer from 'nodemailer';
 import { logger } from './logger.js';
 
-// Construct the transport mechanism mapping to your explicit .env variables
+// Construct the transport mechanism mapping to your explicit Outlook .env variables
 const transporter = nodemailer.createTransport({
-  host: process.env.MAIL_HOST,
-  port: parseInt(process.env.MAIL_PORT || '587', 10), // Defaults to secure submission port 587
-  secure: process.env.MAIL_PORT === '465', // True for port 465, false for other ports
+  host: process.env.MAIL_HOST || 'smtp.office365.com',
+  port: parseInt(process.env.MAIL_PORT || '587', 10), 
+  secure: false, // Set to false for port 587 (Office 365 upgrades the channel securely via STARTTLS)
   auth: {
     user: process.env.MAIL_USERNAME,
-    pass: process.env.MAIL_PASSWORD, // Fixed: changed from 'password' to 'pass'
+    pass: process.env.MAIL_PASSWORD,
   },
   tls: {
-    // Prevents local execution environments from crashing on self-signed certificate handshakes
-    rejectUnauthorized: false,
-    // Ensures connection upgrades safely over TLS channels if port 587 is selected
-    requireTLS: true,
+    ciphers: 'SSLv3', // Required to negotiate smooth handshakes with older Exchange cipher profiles
+    rejectUnauthorized: false, // Prevents local execution environments from crashing on self-signed certificate handshakes
+    requireTLS: true, // Guarantees traffic shifts through strict TLS channels
   },
+});
+
+// Verify SMTP connection configuration on server startup
+transporter.verify((error, success) => {
+  if (error) {
+    logger.error(`SMTP Server connection failed for Outlook: ${error.message}`);
+  } else {
+    logger.info(`SMTP Server channel authenticated successfully for ${process.env.MAIL_USERNAME}`);
+  }
 });
 
 /**
@@ -47,7 +55,7 @@ export const sendOtpEmail = async (toEmail, otpCode) => {
     await transporter.sendMail(mailOptions);
     logger.info(`OTP transmission packet successfully dispatched to: ${toEmail}`);
   } catch (error) {
-    // CRITICAL DEBUG: This prints the exact raw rejection error from Gmail straight to your terminal log console
+    // CRITICAL DEBUG: Prints raw rejection errors from Microsoft directly to your terminal
     console.error("======= RAW SMTP ERROR ENCOUNTERED =======");
     console.error(error);
     console.error("==========================================");
@@ -157,8 +165,6 @@ export const sendClaimStatusUpdateEmail = async (employeeEmail, employeeName, st
 
 /**
  * Dispatches a stylized HTML password reset link directly to the employee
- * @param {string} toEmail - Destination address (username/email)
- * @param {string} resetUrl - Complete frontend link containing the token parameter
  */
 export const sendResetEmail = async (toEmail, resetUrl) => {
   const mailOptions = {
