@@ -47,12 +47,17 @@ export const login = asyncHandler(async (req, res, next) => {
   // Fetch comprehensive employee relationship structures
   const employee = await Employee.findOne({
     where: { employee_id: user.employee_id },
-    attributes: ['email', 'name', 'position'],
+    attributes: ['email', 'name', 'position','status'],
     include: [
       { model: User, as: 'user', attributes: ['role'] },
       { model: Team, as: 'team', attributes: ['team_name'] },
     ],
   });
+
+  if(employee.status === "Inactive"){
+    logger.warn(`Deactivated Employee can't access the system with ID: ${employee.employee_id}`);
+    return next(new ErrorResponse('Your account is deactivated', 400));
+  }
 
   // ACTIVATED: Generate a secure 6-digit numeric verification token
   const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();

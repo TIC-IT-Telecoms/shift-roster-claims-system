@@ -5,6 +5,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { ErrorResponse } from '../utils/ErrorResponse.js';
 import { successResponse } from '../utils/apiResponse.js';
 import { logger } from '../utils/logger.js';
+import { getCurrentUserContext } from '../utils/authHelpers.js';
 
 // @desc    Get all employees
 // @route   GET /api/employees
@@ -215,13 +216,14 @@ export const updateEmployee = asyncHandler(async (req, res, next) => {
 // @access  Admin
 export const deactivateEmployee = asyncHandler(async (req, res, next) => {
   const employee = await Employee.findByPk(req.params.id);
+  const { employeeId } = getCurrentUserContext(req);
 
   if (!employee) {
     logger.warn(`Deactivate failed: Employee not found (${req.params.id})`);
     return next(new ErrorResponse('Employee not found', 404));
   }
 
-  if (employee.employee_id === req.user.id) {
+  if (employee.employee_id === employeeId) {
     logger.warn(`Self-deactivation attempt: User ID ${req.user.id}`);
     return next(new ErrorResponse('You cannot deactivate your own account', 400));
   }
