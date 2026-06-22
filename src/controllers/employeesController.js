@@ -218,8 +218,8 @@ export const updateEmployee = asyncHandler(async (req, res, next) => {
 // @access  Admin
 export const deactivateEmployee = asyncHandler(async (req, res, next) => {
   const employee = await Employee.findByPk(req.params.id);
-  const { employeeId } = getCurrentUserContext(req);
-
+  const { employeeId } = await getCurrentUserContext(req);
+ 
   if (!employee) {
     logger.warn(`Deactivate failed: Employee not found (${req.params.id})`);
     return next(new ErrorResponse('Employee not found', 404));
