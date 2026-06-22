@@ -170,10 +170,12 @@ export const updateEmployee = asyncHandler(async (req, res, next) => {
   }
 
   // ID number uniqueness
-  if (id_number !== undefined && id_number !== null && id_number !== employee.id_number) {
-    const existingId = await Employee.findOne({ where: { id_number } });
-    if (existingId && existingId.employee_id !== employee.employee_id) {
-      return next(new ErrorResponse('ID number already exists', 400));
+  if (id_number !== undefined && id_number !== null && id_number.trim() !== "") {
+    if (id_number !== employee.id_number) {
+      const existingId = await Employee.findOne({ where: { id_number } });
+      if (existingId && existingId.employee_id !== employee.employee_id) {
+        return next(new ErrorResponse('ID number already exists', 400));
+      }
     }
   }
 
@@ -187,7 +189,7 @@ export const updateEmployee = asyncHandler(async (req, res, next) => {
         hourly_rate: hourly_rate ?? employee.hourly_rate,
         role: role ?? employee.role,
         employment_type: employment_type ?? employee.employment_type,
-        id_number: id_number !== undefined ? id_number : employee.id_number,
+        id_number: id_number === undefined ? employee.id_number : (id_number === null || id_number.trim() === "" ? null : id_number),
         address: address !== undefined ? address : employee.address,
         supervisor_id: supervisor_id !== undefined ? supervisor_id : employee.supervisor_id,
       },
