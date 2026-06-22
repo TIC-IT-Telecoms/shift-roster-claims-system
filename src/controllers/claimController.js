@@ -249,7 +249,7 @@ export const getAllClaims = asyncHandler(async (req, res, next) => {
       {
         model: Employee,
         as: 'employee',
-        attributes: ['employee_id', 'name', 'email', 'hourly_rate'], // Uses 'name' to match your database schema
+        attributes: ['employee_id', 'name', 'email', 'hourly_rate'],
         include: [
           {
             model: Team,
@@ -261,7 +261,7 @@ export const getAllClaims = asyncHandler(async (req, res, next) => {
       {
         model: Approval,
         as: 'approval',
-        attributes: ['approval_id', 'approved_by', 'approved_at', 'notes'] // Matches actual schema columns
+        attributes: ['approval_id', 'approved_by', 'approved_at', 'notes']
       }
     ],
     order: [['claim_date', 'DESC']]
