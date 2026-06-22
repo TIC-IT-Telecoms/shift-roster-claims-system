@@ -170,7 +170,7 @@ export const updateEmployee = asyncHandler(async (req, res, next) => {
   }
 
   // ID number uniqueness
-  if (id_number && id_number !== employee.id_number) {
+  if (id_number !== undefined && id_number !== null && id_number !== employee.id_number) {
     const existingId = await Employee.findOne({ where: { id_number } });
     if (existingId && existingId.employee_id !== employee.employee_id) {
       return next(new ErrorResponse('ID number already exists', 400));
