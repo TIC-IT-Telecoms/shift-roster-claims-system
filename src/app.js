@@ -20,6 +20,7 @@ import claimRoutes from './routes/claimRoutes.js';
 import payrollRoutes from './routes/payrollRoutes.js';
 import complianceRoutes from './routes/complianceRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import { successResponse } from './utils/apiResponse.js';
 
 const app = express();
 
@@ -32,7 +33,14 @@ app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
-app.get('/', (_req, res) => { res.send('Shift Roster API is running'); });
+app.get('/api/health', (_req, res) => {
+  return successResponse(
+    res, 
+    { status: 'up', database: 'connected' }, 
+    'Shift Roster API is running', 
+    200
+  );
+}); 
 app.use('/api/auth', authRoutes);
 app.use('/api/employees', employeesRoutes);
 app.use('/api/profile/me', profileRoutes);
